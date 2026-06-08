@@ -24,6 +24,15 @@ export function backoff(attempt: number, baseMs = 500, capMs = 8000): number {
   return Math.min(capMs, baseMs * 2 ** attempt);
 }
 
+/** A server-provided retry delay (e.g. from a 429 Retry-After), if the error carries one. */
+function retryAfterMsOf(error: unknown): number | undefined {
+  if (error && typeof error === "object" && "retryAfterMs" in error) {
+    const v = (error as { retryAfterMs?: unknown }).retryAfterMs;
+    if (typeof v === "number" && Number.isFinite(v) && v >= 0) return v;
+  }
+  return undefined;
+}
+
 export interface PoolOptions {
   /** Max tasks in flight at once. */
   concurrency: number;
@@ -76,7 +85,11 @@ export async function runPool<T>(
         return;
       } catch (error) {
         if (shouldRetry(error, attempt, opts.maxRetries)) {
-          await sleep(backoff(attempt, opts.baseBackoffMs));
+          // Wait at least the exponential backoff, but honor a longer
+          // server-requested delay (429 Retry-After) when present.
+          const base = backoff(attempt, opts.baseBackoffMs);
+          const after = retryAfterMsOf(error);
+          await sleep(after === undefined ? base : Math.max(base, after));
           attempt++;
           continue;
         }

@@ -14,6 +14,8 @@ import { HttpClient, HttpRequestSpec, HttpResponseLike } from "./provider";
 export const obsidianRequestUrlClient: HttpClient = async (
   req: HttpRequestSpec
 ): Promise<HttpResponseLike> => {
+  // SECURITY: never log `req` — req.headers carries the `Authorization: Bearer`
+  // API key. requestUrl traffic is invisible to DevTools Network anyway.
   const res = await requestUrl({
     url: req.url,
     method: req.method,
@@ -32,5 +34,5 @@ export const obsidianRequestUrlClient: HttpClient = async (
     json = undefined;
   }
 
-  return { status: res.status, text: res.text, json };
+  return { status: res.status, text: res.text, json, headers: res.headers };
 };

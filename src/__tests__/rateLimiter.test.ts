@@ -99,6 +99,25 @@ describe("runPool", () => {
     expect(sleep).not.toHaveBeenCalled();
   });
 
+  it("honors retryAfterMs when it exceeds the backoff (429 Retry-After)", async () => {
+    const sleep = vi.fn(async () => {});
+    let calls = 0;
+    const task = async () => {
+      calls++;
+      if (calls === 1) throw new RateLimitError("rate limited", 5000);
+      return "ok";
+    };
+    const res = await runPool([task], {
+      concurrency: 1,
+      minIntervalMs: 0,
+      maxRetries: 3,
+      baseBackoffMs: 100,
+      sleep,
+    });
+    expect(res[0]).toEqual({ ok: true, value: "ok" });
+    expect(sleep).toHaveBeenCalledWith(5000); // max(backoff(0)=100, 5000)
+  });
+
   it("spaces task starts by minIntervalMs", async () => {
     const sleep = vi.fn(async () => {});
     const now = vi.fn(() => 1000); // frozen clock

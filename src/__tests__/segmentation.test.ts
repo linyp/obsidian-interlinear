@@ -67,6 +67,16 @@ describe("packBatch / unpackBatch", () => {
     }
   });
 
+  it("detects too-many segments (model returned extra, got > expected)", () => {
+    const res = unpackBatch(packBatch(["a", "b", "c"]), 2);
+    expect(res.ok).toBe(false);
+    if (!res.ok) {
+      expect(res.reason).toBe("count-mismatch");
+      expect(res.got).toBe(3);
+      expect(res.expected).toBe(2);
+    }
+  });
+
   it("reports no-markers when the model dropped the contract", () => {
     const res = unpackBatch("a plain translation with no markers", 2);
     expect(res.ok).toBe(false);

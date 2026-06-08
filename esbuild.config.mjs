@@ -25,7 +25,8 @@ fs.mkdirSync(outdir, { recursive: true });
 // Keep manifest + styles next to main.js when building into a vault folder.
 function copyAssets() {
   if (path.resolve(outdir) === path.resolve(".")) return;
-  for (const file of ["manifest.json", "styles.css"]) {
+  // `.hotreload` lets pjeby's Hot Reload plugin auto-reload on rebuild.
+  for (const file of ["manifest.json", "styles.css", ".hotreload"]) {
     if (fs.existsSync(file)) fs.copyFileSync(file, path.join(outdir, file));
   }
 }

@@ -5,6 +5,7 @@ import {
   HttpRequestSpec,
   HttpResponseLike,
   AuthError,
+  RateLimitError,
 } from "../translator/provider";
 
 const cfg: ProviderConfig = {
@@ -71,6 +72,30 @@ describe("DeepSeekProvider.translate", () => {
     const provider = new DeepSeekProvider({ config: cfg, http });
     await expect(provider.translate(["hello", "world"])).rejects.toBeInstanceOf(AuthError);
     expect(http).toHaveBeenCalledTimes(1); // no per-segment retries on auth failure
+  });
+
+  it("falls back when the model returns TOO MANY segments", async () => {
+    const responses: HttpResponseLike[] = [
+      batchResponse(["x", "y", "z"]), // expected 2, got 3 -> mismatch
+      singleResponse("你好"),
+      singleResponse("世界"),
+    ];
+    let call = 0;
+    const http = vi.fn(
+      async (_req: HttpRequestSpec): Promise<HttpResponseLike> => responses[call++]
+    );
+    const provider = new DeepSeekProvider({ config: cfg, http });
+    expect(await provider.translate(["hello", "world"])).toEqual(["你好", "世界"]);
+    expect(http).toHaveBeenCalledTimes(3);
+  });
+
+  it("propagates a rate-limit error so the pool can retry (no fallback)", async () => {
+    const http = vi.fn(
+      async (_req: HttpRequestSpec): Promise<HttpResponseLike> => ({ status: 429, text: "" })
+    );
+    const provider = new DeepSeekProvider({ config: cfg, http });
+    await expect(provider.translate(["a", "b"])).rejects.toBeInstanceOf(RateLimitError);
+    expect(http).toHaveBeenCalledTimes(1);
   });
 
   it("sends the packed batch with numbered markers", async () => {

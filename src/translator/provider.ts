@@ -28,6 +28,7 @@ export interface HttpResponseLike {
   status: number;
   text: string;
   json?: unknown;
+  headers?: Record<string, string>;
 }
 
 export type HttpClient = (req: HttpRequestSpec) => Promise<HttpResponseLike>;

@@ -67,6 +67,24 @@ export function buildChatRequest(segments: string[], cfg: ProviderConfig): HttpR
   };
 }
 
+/** Case-insensitive header lookup (requestUrl header casing is not guaranteed). */
+function headerValue(headers: Record<string, string> | undefined, name: string): string | undefined {
+  if (!headers) return undefined;
+  const lower = name.toLowerCase();
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === lower) return headers[key];
+  }
+  return undefined;
+}
+
+/** Parse a `Retry-After` (delta-seconds) header into milliseconds, if present. */
+function retryAfterMs(headers: Record<string, string> | undefined): number | undefined {
+  const raw = headerValue(headers, "Retry-After");
+  if (raw === undefined) return undefined;
+  const seconds = Number(raw);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : undefined;
+}
+
 function extractContent(payload: unknown): string | undefined {
   if (payload && typeof payload === "object") {
     const choices = (payload as { choices?: unknown }).choices;
@@ -92,7 +110,7 @@ function extractContent(payload: unknown): string | undefined {
  */
 export function parseChatResponse(res: HttpResponseLike, expectedCount: number): string[] {
   if (res.status === 401 || res.status === 403) throw new AuthError();
-  if (res.status === 429) throw new RateLimitError();
+  if (res.status === 429) throw new RateLimitError(undefined, retryAfterMs(res.headers));
   if (res.status < 200 || res.status >= 300) {
     throw new MalformedResponseError(`HTTP ${res.status}`);
   }

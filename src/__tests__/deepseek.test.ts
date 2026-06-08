@@ -102,6 +102,28 @@ describe("parseChatResponse", () => {
     expect((err as RateLimitError).retryable).toBe(true);
   });
 
+  it("reads Retry-After (seconds) into RateLimitError.retryAfterMs on 429", () => {
+    let err: unknown;
+    try {
+      parseChatResponse({ status: 429, text: "", headers: { "Retry-After": "12" } }, 1);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect((err as RateLimitError).retryAfterMs).toBe(12000);
+  });
+
+  it("tolerates a missing or non-numeric Retry-After header", () => {
+    let err: unknown;
+    try {
+      parseChatResponse({ status: 429, text: "" }, 1);
+    } catch (e) {
+      err = e;
+    }
+    expect(err).toBeInstanceOf(RateLimitError);
+    expect((err as RateLimitError).retryAfterMs).toBeUndefined();
+  });
+
   it("throws MalformedResponseError on other non-2xx", () => {
     expect(() => parseChatResponse(chatResponse("x", 500), 1)).toThrow(MalformedResponseError);
   });
