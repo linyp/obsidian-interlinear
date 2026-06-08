@@ -9,8 +9,10 @@
  */
 import {
   ProviderConfig,
+  HttpClient,
   HttpRequestSpec,
   HttpResponseLike,
+  TranslationProvider,
   AuthError,
   RateLimitError,
   MalformedResponseError,
@@ -115,4 +117,51 @@ export function parseChatResponse(res: HttpResponseLike, expectedCount: number):
     throw new SegmentCountMismatchError(expectedCount, unpacked.got);
   }
   return unpacked.segments;
+}
+
+export interface DeepSeekProviderDeps {
+  config: ProviderConfig;
+  /** Injected transport — `obsidianRequestUrlClient` in production, a fake in tests. */
+  http: HttpClient;
+}
+
+/**
+ * DeepSeek translation provider. Composes the pure request builder / response
+ * parser with an injected {@link HttpClient}. No `obsidian`, no DOM — the real
+ * `requestUrl` transport is wired in by the caller (see requestUrlClient.ts).
+ */
+export class DeepSeekProvider implements TranslationProvider {
+  private readonly config: ProviderConfig;
+  private readonly http: HttpClient;
+
+  constructor(deps: DeepSeekProviderDeps) {
+    this.config = deps.config;
+    this.http = deps.http;
+  }
+
+  async translate(segments: string[]): Promise<string[]> {
+    if (segments.length === 0) return [];
+    try {
+      const res = await this.http(buildChatRequest(segments, this.config));
+      return parseChatResponse(res, segments.length);
+    } catch (err) {
+      // Only a broken batch contract triggers the fallback; auth/rate-limit/
+      // malformed errors propagate to the caller (and the rate limiter).
+      if (err instanceof SegmentCountMismatchError && segments.length > 1) {
+        return this.translateOneByOne(segments);
+      }
+      throw err;
+    }
+  }
+
+  /** Per-segment fallback: one request each, so every result maps 1:1. */
+  private async translateOneByOne(segments: string[]): Promise<string[]> {
+    const out: string[] = [];
+    for (const segment of segments) {
+      const res = await this.http(buildChatRequest([segment], this.config));
+      const [translated] = parseChatResponse(res, 1);
+      out.push(translated);
+    }
+    return out;
+  }
 }

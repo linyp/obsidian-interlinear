@@ -10,7 +10,13 @@ import { Plugin } from "obsidian";
  */
 export default class InterlinearPlugin extends Plugin {
   async onload(): Promise<void> {
-    // Intentionally empty for the skeleton milestone.
+    // Reading-mode render hook. HARD CONSTRAINT: the render phase NEVER
+    // translates and NEVER touches the network — original markdown renders
+    // untouched. Translation is triggered ONLY by the FAB click (Milestone 4).
+    // This processor establishes that render-only boundary.
+    this.registerMarkdownPostProcessor(() => {
+      /* no-op: do not translate at render time */
+    });
   }
 
   onunload(): void {
