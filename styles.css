@@ -1,26 +1,58 @@
 /*
  * Interlinear — translation render-layer styles.
- * Stub (Milestone 1); FAB + display-mode visuals are finalized in Milestone 4.
  * Display mode is switched purely by toggling a class on the reading container,
  * never by re-requesting translations.
  */
 
 /* Floating action button (reading view, bottom-right) — the only translate trigger. */
 .it-fab {
-  /* positioning/appearance defined in Milestone 4 */
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  z-index: var(--layer-popover, 30);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  background-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+  box-shadow: var(--shadow-s);
+  cursor: pointer;
+  opacity: 0.85;
+  transition: opacity 0.15s ease;
+}
+
+.it-fab:hover {
+  opacity: 1;
+}
+
+.it-fab.is-translating {
+  cursor: progress;
+  opacity: 0.6;
+}
+
+.it-fab.is-translated {
+  background-color: var(--interactive-accent-hover);
 }
 
 /* Injected translation node, rendered as a sibling after each source block. */
 .it-translation {
-  /* appearance defined in Milestone 4 */
+  margin: 0.2em 0 0.6em;
+  color: var(--text-normal);
+  border-inline-start: 2px solid var(--background-modifier-border);
+  padding-inline-start: 0.6em;
 }
 
-/* Marker class on each original (source) block. */
+/* Original (source) block marker — no styling by default. */
 .it-source {
-  /* no styling by default */
+  /* visible in bilingual mode */
 }
 
-/* Bilingual mode: show both original and translation (default — nothing to hide). */
+/* Bilingual mode: show originals (default). */
 .it-mode-bilingual .it-source {
   display: revert;
 }

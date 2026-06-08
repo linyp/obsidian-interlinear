@@ -12,13 +12,12 @@
 import { MarkdownRenderer } from "obsidian";
 import type { App, Component } from "obsidian";
 import { BlockDescriptor, BlockKind, isTranslatable } from "../core/blockRules";
+import type { DisplayMode } from "../settings";
 
 export const SOURCE_CLASS = "it-source";
 export const TRANSLATION_CLASS = "it-translation";
 export const MODE_BILINGUAL_CLASS = "it-mode-bilingual";
 export const MODE_TRANSLATION_ONLY_CLASS = "it-mode-translation-only";
-
-export type DisplayMode = "bilingual" | "translation-only";
 
 const TAG_TO_KIND: Record<string, BlockKind> = {
   p: "p",

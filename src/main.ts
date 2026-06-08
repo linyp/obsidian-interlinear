@@ -1,26 +1,75 @@
 import { Plugin } from "obsidian";
+import { DEFAULT_SETTINGS, InterlinearSettings, normalizeSettings } from "./settings";
+import { TranslationCache } from "./translator/cache";
+import { obsidianRequestUrlClient } from "./translator/requestUrlClient";
+import { FabController } from "./ui/translateButton";
+import { InterlinearSettingTab } from "./ui/settingsTab";
 
 /**
  * Interlinear — reading-mode immersive translation for Obsidian.
  *
- * Milestone 1: skeleton only. Deliberately does nothing at load time —
- * no post-processor, no FAB, no network, no Vault writes. The translation
- * pipeline (render layer, settings, and the FAB that is the *only* translate
- * trigger) is wired in later milestones.
+ * Composition root. Hard constraints enforced here:
+ *  - The markdown post-processor NEVER translates / hits the network.
+ *  - Translation runs ONLY via the FAB or a command (never on note open).
+ *  - Settings persist to data.json (plugin data, gitignored) — never the note body.
  */
 export default class InterlinearPlugin extends Plugin {
+  settings: InterlinearSettings = DEFAULT_SETTINGS;
+  private readonly cache = new TranslationCache();
+  private controller!: FabController;
+
   async onload(): Promise<void> {
-    // Reading-mode render hook. HARD CONSTRAINT: the render phase NEVER
-    // translates and NEVER touches the network — original markdown renders
-    // untouched. Translation is triggered ONLY by the FAB click (Milestone 4).
-    // This processor establishes that render-only boundary.
+    await this.loadSettings();
+
+    this.controller = new FabController({
+      app: this.app,
+      component: this,
+      http: obsidianRequestUrlClient,
+      getSettings: () => this.settings,
+      cache: this.cache,
+    });
+
+    this.addSettingTab(new InterlinearSettingTab(this.app, this));
+
+    // Reading-mode render hook. HARD CONSTRAINT: render phase never translates
+    // and never touches the network — original markdown renders untouched.
     this.registerMarkdownPostProcessor(() => {
-      /* no-op: do not translate at render time */
+      /* no-op: translation is triggered ONLY by the FAB / commands */
+    });
+
+    // Keep a FAB on the active reading view. Attaching the button is NOT a
+    // translation trigger — it just waits for an explicit click.
+    this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.controller.syncActiveView()));
+    this.registerEvent(this.app.workspace.on("layout-change", () => this.controller.syncActiveView()));
+    this.app.workspace.onLayoutReady(() => this.controller.syncActiveView());
+
+    this.addCommand({
+      id: "translate-current-note",
+      name: "Translate current note",
+      callback: () => void this.controller.translateActiveView(),
+    });
+    this.addCommand({
+      id: "toggle-display-mode",
+      name: "Toggle translation display mode",
+      callback: () => this.controller.toggleModeActiveView(),
+    });
+    this.addCommand({
+      id: "clear-translations",
+      name: "Clear translations",
+      callback: () => this.controller.clearActiveView(),
     });
   }
 
   onunload(): void {
-    // Everything is registered via register*/add* helpers in later milestones,
-    // so Obsidian tears it all down automatically — nothing to clean up here.
+    // register*/add* registrations are torn down automatically by Obsidian.
+    this.cache.clear();
+  }
+
+  async loadSettings(): Promise<void> {
+    this.settings = normalizeSettings(await this.loadData());
+  }
+
+  async saveSettings(): Promise<void> {
+    await this.saveData(this.settings);
   }
 }
