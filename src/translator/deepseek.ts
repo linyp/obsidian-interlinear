@@ -1,0 +1,118 @@
+/**
+ * DeepSeek backend — PURE parts only (Milestone 2):
+ *   - `buildChatRequest`  : construct the OpenAI-compatible request spec
+ *   - `parseChatResponse` : validate status, extract content, unpack segments
+ *
+ * The `DeepSeekProvider` class (composing these with an injected HttpClient +
+ * per-segment fallback) and the `requestUrl` adapter arrive in Milestone 3.
+ * No `obsidian`, no network here.
+ */
+import {
+  ProviderConfig,
+  HttpRequestSpec,
+  HttpResponseLike,
+  AuthError,
+  RateLimitError,
+  MalformedResponseError,
+  SegmentCountMismatchError,
+} from "./provider";
+import { packBatch, unpackBatch } from "../core/segmentation";
+
+export const DEEPSEEK_DEFAULT_BASE_URL = "https://api.deepseek.com";
+export const DEEPSEEK_DEFAULT_MODEL = "deepseek-v4-flash";
+export const DEEPSEEK_CHAT_PATH = "/chat/completions";
+
+/** System prompt: constrain term consistency, markdown preservation, output-only,
+ *  and the numbered-segment contract. `{{TARGET_LANG}}` is filled per request. */
+const SYSTEM_PROMPT_TEMPLATE = [
+  "You are a professional translator.",
+  "Translate each input segment into {{TARGET_LANG}}.",
+  "Keep terminology consistent across segments.",
+  "Preserve the original markdown structure and inline formatting.",
+  "Output ONLY the translation — no explanations, no commentary, no extra notes.",
+  "The input is split into segments, each introduced by a line `<<<SEG k>>>`.",
+  "Return the SAME number of segments in the SAME order, each introduced by its",
+  "exact `<<<SEG k>>>` marker on its own line, followed by that segment's translation.",
+].join("\n");
+
+export function buildSystemPrompt(targetLang: string): string {
+  return SYSTEM_PROMPT_TEMPLATE.replace("{{TARGET_LANG}}", targetLang);
+}
+
+function joinUrl(base: string, path: string): string {
+  return base.replace(/\/+$/, "") + path;
+}
+
+/** Build the OpenAI-compatible `/chat/completions` request for a batch. */
+export function buildChatRequest(segments: string[], cfg: ProviderConfig): HttpRequestSpec {
+  const body = {
+    model: cfg.model,
+    messages: [
+      { role: "system", content: buildSystemPrompt(cfg.targetLang) },
+      { role: "user", content: packBatch(segments) },
+    ],
+    stream: false,
+    temperature: 0,
+  };
+  return {
+    url: joinUrl(cfg.baseUrl, DEEPSEEK_CHAT_PATH),
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${cfg.apiKey}`,
+    },
+    body: JSON.stringify(body),
+  };
+}
+
+function extractContent(payload: unknown): string | undefined {
+  if (payload && typeof payload === "object") {
+    const choices = (payload as { choices?: unknown }).choices;
+    if (Array.isArray(choices) && choices.length > 0) {
+      const message = (choices[0] as { message?: unknown }).message;
+      if (message && typeof message === "object") {
+        const content = (message as { content?: unknown }).content;
+        if (typeof content === "string") return content;
+      }
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Parse a DeepSeek chat response into `expectedCount` translations.
+ * Throws typed errors the caller (provider/rate limiter) acts on:
+ *   401/403 -> AuthError, 429 -> RateLimitError, other non-2xx/bad body ->
+ *   MalformedResponseError, batch count/order mismatch -> SegmentCountMismatchError.
+ *
+ * For a single-segment request (e.g. the per-segment fallback) the model often
+ * omits the marker; we then accept the whole content as the one translation.
+ */
+export function parseChatResponse(res: HttpResponseLike, expectedCount: number): string[] {
+  if (res.status === 401 || res.status === 403) throw new AuthError();
+  if (res.status === 429) throw new RateLimitError();
+  if (res.status < 200 || res.status >= 300) {
+    throw new MalformedResponseError(`HTTP ${res.status}`);
+  }
+
+  let payload: unknown = res.json;
+  if (payload === undefined || payload === null) {
+    try {
+      payload = JSON.parse(res.text);
+    } catch {
+      throw new MalformedResponseError("Response body is not valid JSON.");
+    }
+  }
+
+  const content = extractContent(payload);
+  if (content === undefined) {
+    throw new MalformedResponseError("Missing choices[0].message.content.");
+  }
+
+  const unpacked = unpackBatch(content, expectedCount);
+  if (!unpacked.ok) {
+    if (expectedCount === 1) return [content.trim()];
+    throw new SegmentCountMismatchError(expectedCount, unpacked.got);
+  }
+  return unpacked.segments;
+}
