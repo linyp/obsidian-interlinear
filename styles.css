@@ -1,0 +1,31 @@
+/*
+ * Interlinear — translation render-layer styles.
+ * Stub (Milestone 1); FAB + display-mode visuals are finalized in Milestone 4.
+ * Display mode is switched purely by toggling a class on the reading container,
+ * never by re-requesting translations.
+ */
+
+/* Floating action button (reading view, bottom-right) — the only translate trigger. */
+.it-fab {
+  /* positioning/appearance defined in Milestone 4 */
+}
+
+/* Injected translation node, rendered as a sibling after each source block. */
+.it-translation {
+  /* appearance defined in Milestone 4 */
+}
+
+/* Marker class on each original (source) block. */
+.it-source {
+  /* no styling by default */
+}
+
+/* Bilingual mode: show both original and translation (default — nothing to hide). */
+.it-mode-bilingual .it-source {
+  display: revert;
+}
+
+/* Translation-only mode: hide the originals, keep the translations. */
+.it-mode-translation-only .it-source {
+  display: none;
+}

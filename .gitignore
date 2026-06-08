@@ -1,0 +1,13 @@
+# Dependencies
+node_modules/
+
+# Build artifacts
+main.js
+main.js.map
+
+# Plugin data — holds the user's API key; MUST NOT be committed (BYOK, zero telemetry).
+data.json
+
+# Misc
+*.log
+.DS_Store

@@ -1,0 +1,30 @@
+{
+  "name": "interlinear",
+  "version": "0.1.0",
+  "description": "Immersive-translation-style reading-mode translator for Obsidian (inspired by immersive translation; not affiliated).",
+  "main": "main.js",
+  "scripts": {
+    "dev": "node esbuild.config.mjs",
+    "build": "tsc --noEmit --skipLibCheck && node esbuild.config.mjs production",
+    "typecheck": "tsc --noEmit --skipLibCheck",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "translation",
+    "deepseek"
+  ],
+  "author": "Yupeng Lin",
+  "license": "MIT",
+  "devDependencies": {
+    "@types/node": "^25.9.2",
+    "builtin-modules": "^5.2.0",
+    "esbuild": "^0.28.0",
+    "obsidian": "^1.13.0",
+    "tslib": "^2.8.1",
+    "typescript": "^6.0.3",
+    "vitest": "^4.1.8"
+  }
+}
