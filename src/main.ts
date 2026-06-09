@@ -2,7 +2,7 @@ import { Plugin } from "obsidian";
 import { DEFAULT_SETTINGS, InterlinearSettings, normalizeSettings } from "./settings";
 import { TranslationCache } from "./translator/cache";
 import { obsidianRequestUrlClient } from "./translator/requestUrlClient";
-import { FabController } from "./ui/translateButton";
+import { TranslationController } from "./ui/translateButton";
 import { InterlinearSettingTab } from "./ui/settingsTab";
 
 /**
@@ -16,18 +16,19 @@ import { InterlinearSettingTab } from "./ui/settingsTab";
 export default class InterlinearPlugin extends Plugin {
   settings: InterlinearSettings = DEFAULT_SETTINGS;
   private readonly cache = new TranslationCache();
-  private controller!: FabController;
+  private controller!: TranslationController;
 
   async onload(): Promise<void> {
     await this.loadSettings();
 
-    this.controller = new FabController({
+    this.controller = new TranslationController({
       app: this.app,
       component: this,
       http: obsidianRequestUrlClient,
       getSettings: () => this.settings,
       cache: this.cache,
     });
+    this.controller.mountStatusBar(this.addStatusBarItem());
 
     this.addSettingTab(new InterlinearSettingTab(this.app, this));
 
@@ -39,21 +40,23 @@ export default class InterlinearPlugin extends Plugin {
       /* no-op: translation is started only by the FAB / commands */
     });
 
-    // Keep a FAB on the active reading view. Attaching the button is NOT a
-    // translation trigger — it just waits for an explicit click.
+    // Refresh the status-bar buttons when the active note/layout changes. This is
+    // NOT a translation trigger — translation only starts on an explicit click/command.
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.controller.syncActiveView()));
     this.registerEvent(this.app.workspace.on("layout-change", () => this.controller.syncActiveView()));
     this.app.workspace.onLayoutReady(() => this.controller.syncActiveView());
 
     this.addCommand({
-      id: "translate-current-note",
-      name: "Translate current note",
-      callback: () => void this.controller.translateActiveView(),
+      id: "toggle-translation",
+      name: "Translate / show original",
+      // Default ⌥A (Alt = Option on macOS); rebindable in Settings → Hotkeys.
+      hotkeys: [{ modifiers: ["Alt"], key: "a" }],
+      callback: () => this.controller.toggleTranslate(),
     });
     this.addCommand({
       id: "toggle-display-mode",
-      name: "Toggle translation display mode",
-      callback: () => this.controller.toggleModeActiveView(),
+      name: "Toggle display mode (bilingual / translation-only)",
+      callback: () => this.controller.toggleMode(),
     });
     this.addCommand({
       id: "clear-translations",

@@ -1,22 +1,18 @@
 /**
- * Floating action button + translation flow — the ONLY translation trigger.
+ * Status-bar translation controls + translation flow — the ONLY translate trigger.
  *
- * Shell file (imports obsidian/DOM); never imported by tests. All real logic
- * (segmentation, batching, rate limiting, provider, cache, skip rules) is the
- * pure, tested core — this just orchestrates it against the live reading view.
+ * Two buttons live in Obsidian's (global) status bar and act on the active
+ * reading view:
+ *   1. Translate / Show-original (⌥A): first click translates the whole note;
+ *      once translated, it toggles between showing the translation and the
+ *      original (a CSS class swap — no re-request).
+ *   2. Display mode: bilingual (original + translation) vs translation-only.
  *
- * Obsidian's reading view is VIRTUALIZED: off-screen blocks aren't in the live
- * DOM (unlike a web page). So one click:
- *   1. translates the on-screen blocks immediately;
- *   2. pre-translates the WHOLE note into the cache in the background (by
- *      rendering its source off-screen — a plain render isn't virtualized); and
- *   3. uses a MutationObserver to inject cached translations into each block the
- *      instant Obsidian renders it (e.g. on scroll). The reading-view markdown
- *      post-processor does NOT fire reliably on scroll, so the observer — not the
- *      post-processor — is what keeps the rest of the note translated.
- *
- * Translation is started ONLY by an explicit FAB click / command (the `active`
- * flag). Cache + idempotent injection make re-renders free.
+ * Obsidian's reading view is VIRTUALIZED (off-screen blocks aren't in the live
+ * DOM), so one click: translates on-screen blocks immediately; pre-translates
+ * the whole note into the cache by rendering its source off-screen; and a
+ * MutationObserver injects cached translations into each block the instant it
+ * renders on scroll. Shell file (imports obsidian/DOM) — never imported by tests.
  */
 import { MarkdownView, Notice, setIcon } from "obsidian";
 import type { App, Component } from "obsidian";
@@ -37,16 +33,13 @@ import { DeepSeekProvider } from "../translator/deepseek";
 import { HttpClient, AuthError } from "../translator/provider";
 import { TranslationCache } from "../translator/cache";
 import { DisplayMode, InterlinearSettings, isConfigured, toProviderConfig } from "../settings";
-import { nextFabAction } from "./fabState";
 
-const FAB_CLASS = "it-fab";
-const FAB_ICON = "languages";
-const FAB_BUSY_ICON = "loader";
-// Coalesce the burst of DOM mutations Obsidian emits while rendering sections.
+const REVEAL_OFF_CLASS = "it-reveal-off"; // on container: hide translations, show originals
 const SYNC_DEBOUNCE_MS = 120;
 
 interface FileState {
-  active: boolean;
+  active: boolean; // translation has been run for this note
+  revealed: boolean; // translations currently shown (vs "show original")
   mode: DisplayMode;
 }
 
@@ -56,7 +49,7 @@ interface ActiveReading {
   path: string;
 }
 
-export interface FabControllerDeps {
+export interface TranslationControllerDeps {
   app: App;
   /** The plugin, used as the Component for DOM-event/registration lifecycle. */
   component: Component;
@@ -69,7 +62,7 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-export class FabController {
+export class TranslationController {
   private readonly app: App;
   private readonly component: Component;
   private readonly http: HttpClient;
@@ -79,15 +72,21 @@ export class FabController {
   private readonly fileStates = new Map<string, FileState>();
   private readonly flushing = new Set<string>();
   private readonly syncing = new Set<string>();
-  // Texts whose translation failed; skipped on scroll so a failure can't loop.
-  // Cleared when the user re-activates (re-click) so failures get one retry.
   private readonly failedTexts = new Map<string, Set<string>>();
 
   private observer: MutationObserver | null = null;
   private observedEl: HTMLElement | null = null;
   private syncTimer: number | null = null;
 
-  constructor(deps: FabControllerDeps) {
+  // Status-bar UI
+  private translateBtn: HTMLElement | null = null;
+  private translateIconEl: HTMLElement | null = null;
+  private translateLabelEl: HTMLElement | null = null;
+  private modeBtn: HTMLElement | null = null;
+  private modeIconEl: HTMLElement | null = null;
+  private modeLabelEl: HTMLElement | null = null;
+
+  constructor(deps: TranslationControllerDeps) {
     this.app = deps.app;
     this.component = deps.component;
     this.http = deps.http;
@@ -95,44 +94,81 @@ export class FabController {
     this.cache = deps.cache;
   }
 
-  /** Ensure the active reading view has a FAB. Attaching it is NOT a translation. */
-  syncActiveView(): void {
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (!view || view.getMode() !== "preview") return;
-    this.ensureFab(view);
-    const path = view.file?.path;
-    if (path && this.stateFor(path).active) {
-      // Returning to an already-activated note: keep observing it and re-inject.
-      this.observe(view.previewMode.containerEl);
-      this.scheduleSync();
-    }
+  /** Build the two status-bar buttons inside the given status-bar item element. */
+  mountStatusBar(el: HTMLElement): void {
+    el.addClass("it-statusbar");
+
+    this.modeBtn = el.createEl("span", { cls: "it-sb-btn it-sb-mode" });
+    this.modeIconEl = this.modeBtn.createSpan({ cls: "it-sb-icon" });
+    this.modeLabelEl = this.modeBtn.createSpan({ cls: "it-sb-label" });
+    this.component.registerDomEvent(this.modeBtn, "click", () => this.toggleMode());
+
+    this.translateBtn = el.createEl("span", { cls: "it-sb-btn it-sb-translate" });
+    this.translateIconEl = this.translateBtn.createSpan({ cls: "it-sb-icon" });
+    this.translateLabelEl = this.translateBtn.createSpan({ cls: "it-sb-label" });
+    this.component.registerDomEvent(this.translateBtn, "click", () => this.toggleTranslate());
+
+    this.paintStatusBar();
   }
 
-  translateActiveView(): void {
+  /** Refresh observer + status bar when the active leaf/layout changes. */
+  syncActiveView(): void {
+    const active = this.getActiveReading();
+    if (active && this.stateFor(active.path).active) {
+      this.observe(active.container);
+      this.scheduleSync(); // re-inject cached translations when returning to the note
+    }
+    this.paintStatusBar();
+  }
+
+  /** Button ①/⌥A: translate, or toggle translation ↔ original once translated. */
+  toggleTranslate(): void {
     const active = this.getActiveReading();
     if (!active) {
       new Notice("请在阅读模式下使用 Interlinear");
       return;
     }
-    this.activate(active);
+    const st = this.stateFor(active.path);
+    if (!st.active) {
+      this.activate(active);
+    } else {
+      st.revealed = !st.revealed;
+      this.applyView(active, st);
+      new Notice(st.revealed ? "显示译文" : "显示原文");
+      this.paintStatusBar();
+    }
   }
 
-  toggleModeActiveView(): void {
+  /** Button ②: toggle bilingual ↔ translation-only (display effect only). */
+  toggleMode(): void {
     const active = this.getActiveReading();
-    if (active) this.toggleMode(active, this.stateFor(active.path));
+    if (!active) {
+      new Notice("请在阅读模式下使用 Interlinear");
+      return;
+    }
+    const st = this.stateFor(active.path);
+    st.mode = st.mode === "bilingual" ? "translation-only" : "bilingual";
+    if (st.active && st.revealed) {
+      applyDisplayMode(active.container, st.mode);
+      new Notice(st.mode === "bilingual" ? "双语对照" : "仅译文");
+    }
+    this.paintStatusBar();
   }
 
   clearActiveView(): void {
     const active = this.getActiveReading();
     if (!active) return;
-    this.stateFor(active.path).active = false;
+    const st = this.stateFor(active.path);
+    st.active = false;
+    st.revealed = false;
     this.failedTexts.delete(active.path);
     if (this.observedEl === active.container) {
       this.observer?.disconnect();
       this.observedEl = null;
     }
     clearTranslations(active.container);
-    this.refreshFab(active.view);
+    active.container.removeClass(REVEAL_OFF_CLASS);
+    this.paintStatusBar();
   }
 
   // --- internals -----------------------------------------------------------
@@ -148,7 +184,7 @@ export class FabController {
   private stateFor(path: string): FileState {
     let st = this.fileStates.get(path);
     if (!st) {
-      st = { active: false, mode: this.getSettings().defaultDisplayMode };
+      st = { active: false, revealed: false, mode: this.getSettings().defaultDisplayMode };
       this.fileStates.set(path, st);
     }
     return st;
@@ -171,22 +207,23 @@ export class FabController {
     const st = this.stateFor(active.path);
     const firstActivation = !st.active;
     st.active = true;
+    st.revealed = true;
     this.failedTexts.delete(active.path); // re-click retries previously-failed blocks
     this.observe(active.container);
-    applyDisplayMode(active.container, st.mode); // set mode class up front (streaming injects)
-    this.refreshFab(active.view);
+    this.applyView(active, st);
+    this.paintStatusBar();
     if (firstActivation) new Notice("正在翻译整篇…");
 
-    // Translate the visible blocks now (fast feedback) and pre-translate the rest.
     void this.syncVisible(active, st);
     void this.pretranslateWholeDoc(active);
   }
 
-  /**
-   * Re-inject cached translations whenever Obsidian renders new section DOM
-   * (e.g. on scroll). This is the reliable "content rendered" hook — the reading
-   * view's markdown post-processor does not fire dependably on scroll.
-   */
+  /** Apply reveal (translation vs original) + display mode via container classes. */
+  private applyView(active: ActiveReading, st: FileState): void {
+    active.container.toggleClass(REVEAL_OFF_CLASS, !st.revealed);
+    applyDisplayMode(active.container, st.mode);
+  }
+
   private observe(container: HTMLElement): void {
     if (!this.observer) {
       this.observer = new MutationObserver(() => this.scheduleSync());
@@ -209,29 +246,26 @@ export class FabController {
     }, SYNC_DEBOUNCE_MS);
   }
 
-  /**
-   * Translate/inject the blocks currently on screen: cache hits inject instantly,
-   * misses are translated once (and recorded on failure so they don't loop).
-   * Serialized per note so overlapping observer ticks can't double-translate.
-   */
+  /** Translate/inject the blocks currently on screen (cache hits instant; misses
+   *  translated once). Serialized per note so observer ticks can't double-run. */
   private async syncVisible(active: ActiveReading, st: FileState): Promise<void> {
     if (!st.active) return;
     if (this.syncing.has(active.path)) {
-      this.scheduleSync(); // try again after the in-flight run finishes
+      this.scheduleSync();
       return;
     }
     const failed = this.failedTexts.get(active.path);
     const blocks = collectTranslatableBlocks(active.container).filter((b) => {
       const sib = b.el.nextElementSibling;
-      if (sib && sib.hasClass(TRANSLATION_CLASS)) return false; // already injected
-      if (failed && failed.has(b.descriptor.text)) return false; // don't retry in a loop
+      if (sib && sib.hasClass(TRANSLATION_CLASS)) return false;
+      if (failed && failed.has(b.descriptor.text)) return false;
       return true;
     });
     if (blocks.length === 0) return;
 
     this.syncing.add(active.path);
     this.flushing.add(active.path);
-    this.repaintActiveFab();
+    this.paintStatusBar();
     try {
       await this.translateBatch(blocks, active.container, active.path, this.getSettings(), st);
     } catch (err) {
@@ -239,16 +273,10 @@ export class FabController {
     } finally {
       this.syncing.delete(active.path);
       this.flushing.delete(active.path);
-      this.repaintActiveFab();
+      this.paintStatusBar();
     }
   }
 
-  /**
-   * Pre-translate the ENTIRE note into the cache by rendering its source off-screen
-   * (a plain MarkdownRenderer.render is not virtualized → the whole document). The
-   * results can't be injected off-screen, but the observer injects them instantly
-   * as each block scrolls into view.
-   */
   private async pretranslateWholeDoc(active: ActiveReading): Promise<void> {
     const settings = this.getSettings();
     if (!isConfigured(settings)) return;
@@ -262,7 +290,7 @@ export class FabController {
         this.component
       );
     } catch {
-      return; // best-effort; visible + on-scroll translation still work
+      return;
     }
 
     const { model, targetLang } = settings;
@@ -273,7 +301,7 @@ export class FabController {
     }
 
     this.flushing.add(active.path);
-    this.repaintActiveFab();
+    this.paintStatusBar();
     try {
       const segments: Segment[] = misses.map((text, index) => ({ index, text }));
       const chunks = chunkByBudget(segments, settings.batchCharBudget);
@@ -308,10 +336,9 @@ export class FabController {
       else new Notice("整篇已翻译，向下滚动即可即时显示");
     } finally {
       this.flushing.delete(active.path);
-      this.repaintActiveFab();
+      this.paintStatusBar();
     }
 
-    // Inject whatever is now on screen (and let the observer handle the rest).
     await this.syncVisible(active, this.stateFor(active.path));
   }
 
@@ -325,7 +352,6 @@ export class FabController {
     const { model, targetLang } = settings;
     const ctx: InjectContext = { app: this.app, sourcePath: path, component: this.component };
 
-    // Cache hits render immediately; misses get a spinner until translated.
     const misses: Array<{ el: HTMLElement; text: string }> = [];
     for (const block of blocks) {
       const text = block.descriptor.text;
@@ -345,8 +371,7 @@ export class FabController {
     const chunks = chunkByBudget(segments, settings.batchCharBudget);
     const provider = new DeepSeekProvider({ config: toProviderConfig(settings), http: this.http });
 
-    // Each task injects its own translations as it completes, so spinners clear
-    // batch-by-batch (streaming feel) rather than all at the end.
+    // Each task injects its blocks (and clears their spinners) as it completes.
     const tasks = chunks.map((chunk) => async () => {
       const translations = await provider.translate(chunk.map((s) => s.text));
       for (let j = 0; j < chunk.length; j++) {
@@ -372,8 +397,8 @@ export class FabController {
         failed++;
         if (result.error instanceof AuthError) authFailed = true;
         for (const s of chunks[i]) {
-          setBlockLoading(misses[s.index].el, false); // clear spinner on failure
-          failedSet.add(s.text); // don't retry in a loop
+          setBlockLoading(misses[s.index].el, false);
+          failedSet.add(s.text);
         }
       }
     }
@@ -383,56 +408,31 @@ export class FabController {
     else if (failed > 0) new Notice(`有 ${failed} 批内容翻译失败，可重新触发以重试`);
   }
 
-  private toggleMode(active: ActiveReading, st: FileState): void {
-    st.mode = st.mode === "bilingual" ? "translation-only" : "bilingual";
-    applyDisplayMode(active.container, st.mode);
-    new Notice(st.mode === "bilingual" ? "双语对照" : "仅译文");
-  }
-
-  private onFabClick(): void {
+  private paintStatusBar(): void {
+    if (!this.translateBtn || !this.modeBtn) return;
     const active = this.getActiveReading();
-    if (!active) return;
-    if (nextFabAction(this.stateFor(active.path).active) === "toggle-mode") {
-      this.toggleMode(active, this.stateFor(active.path));
-    } else {
-      this.activate(active);
+    const st = active ? this.stateFor(active.path) : null;
+    const inReading = active !== null;
+    const busy = active ? this.flushing.has(active.path) : false;
+
+    // Translate / show-original button
+    if (this.translateIconEl) {
+      setIcon(this.translateIconEl, busy ? "loader" : st?.active && st.revealed ? "book-open" : "languages");
     }
-  }
-
-  private ensureFab(view: MarkdownView): void {
-    const host = view.contentEl;
-    let fab = host.querySelector<HTMLButtonElement>(`.${FAB_CLASS}`);
-    if (!fab) {
-      fab = host.createEl("button", {
-        cls: FAB_CLASS,
-        attr: { type: "button", "aria-label": "Interlinear: 翻译 / 切换显示" },
-      });
-      this.component.registerDomEvent(fab, "click", () => this.onFabClick());
+    if (this.translateLabelEl) {
+      this.translateLabelEl.textContent = !st || !st.active ? "翻译" : st.revealed ? "显示原文" : "显示译文";
     }
-    this.paintFab(view, fab);
-  }
+    this.translateBtn.toggleClass("is-disabled", !inReading);
+    this.translateBtn.toggleClass("is-busy", busy);
 
-  private refreshFab(view: MarkdownView): void {
-    const fab = view.contentEl.querySelector<HTMLButtonElement>(`.${FAB_CLASS}`);
-    if (fab) this.paintFab(view, fab);
-  }
-
-  private repaintActiveFab(): void {
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (view && view.getMode() === "preview") this.refreshFab(view);
-  }
-
-  private paintFab(view: MarkdownView, fab: HTMLElement): void {
-    const path = view.file?.path;
-    const active = path ? this.stateFor(path).active : false;
-    const busy = path ? this.flushing.has(path) : false;
-    fab.removeClass("is-translating", "is-translated");
-    if (busy) {
-      fab.addClass("is-translating");
-      setIcon(fab, FAB_BUSY_ICON);
-    } else {
-      if (active) fab.addClass("is-translated");
-      setIcon(fab, FAB_ICON);
+    // Display-mode button
+    const modeUsable = st !== null && st.active && st.revealed;
+    if (this.modeIconEl) {
+      setIcon(this.modeIconEl, st?.mode === "translation-only" ? "align-justify" : "columns-2");
     }
+    if (this.modeLabelEl) {
+      this.modeLabelEl.textContent = st?.mode === "translation-only" ? "仅译文" : "双语";
+    }
+    this.modeBtn.toggleClass("is-disabled", !modeUsable);
   }
 }

@@ -4,39 +4,50 @@
  * never by re-requesting translations.
  */
 
-/* Floating action button (reading view, bottom-right) — the only translate trigger. */
-.it-fab {
-  position: absolute;
-  right: 24px;
-  bottom: 24px;
-  z-index: var(--layer-popover, 30);
-  display: flex;
+/* Status-bar controls: ① Translate / Show-original  ② display-mode toggle. */
+.it-statusbar {
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  padding: 0;
-  border: none;
-  border-radius: 50%;
-  background-color: var(--interactive-accent);
-  color: var(--text-on-accent);
-  box-shadow: var(--shadow-s);
+  gap: 2px;
+}
+
+.it-sb-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: var(--radius-s);
   cursor: pointer;
-  opacity: 0.85;
-  transition: opacity 0.15s ease;
+  color: var(--text-muted);
 }
 
-.it-fab:hover {
-  opacity: 1;
+.it-sb-btn:hover {
+  color: var(--text-normal);
+  background-color: var(--background-modifier-hover);
 }
 
-.it-fab.is-translating {
-  cursor: progress;
-  opacity: 0.6;
+.it-sb-btn.is-disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
-.it-fab.is-translated {
-  background-color: var(--interactive-accent-hover);
+.it-sb-btn.is-disabled:hover {
+  color: var(--text-muted);
+  background-color: transparent;
+}
+
+.it-sb-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.it-sb-icon .svg-icon {
+  width: 14px;
+  height: 14px;
+}
+
+.it-sb-btn.is-busy .it-sb-icon {
+  animation: it-spin 0.7s linear infinite;
 }
 
 /* Per-block "translating…" spinner, appended at the end of a block while its
@@ -80,6 +91,15 @@
 /* Translation-only mode: hide the originals, keep the translations. */
 .it-mode-translation-only .it-source {
   display: none;
+}
+
+/* "Show original": hide all translations and force originals visible. Placed
+   after the mode rules so it overrides translation-only. */
+.it-reveal-off .it-translation {
+  display: none;
+}
+.it-reveal-off .it-source {
+  display: revert;
 }
 
 /* Hidden off-screen container used to render the full note for pre-translation.
