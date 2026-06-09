@@ -24,6 +24,8 @@ export interface InterlinearSettings {
   batchCharBudget: number;
   /** Max blocks packed into one request (also bounded by batchCharBudget). */
   maxSegmentsPerBatch: number;
+  /** Optional extra instructions appended to the system prompt (glossary, tone, domain). */
+  customInstructions: string;
 }
 
 export const DEFAULT_SETTINGS: InterlinearSettings = {
@@ -45,6 +47,7 @@ export const DEFAULT_SETTINGS: InterlinearSettings = {
   // request, where the model is likelier to miscount and force the slow
   // per-segment fallback. 12 stays reliable without fragmenting normal prose.
   maxSegmentsPerBatch: 12,
+  customInstructions: "",
 };
 
 function nonEmptyOr(value: unknown, fallback: string): string {
@@ -76,12 +79,20 @@ export function normalizeSettings(raw: unknown): InterlinearSettings {
     maxRetries: clampInt(merged.maxRetries, 0, 10, DEFAULT_SETTINGS.maxRetries),
     batchCharBudget: clampInt(merged.batchCharBudget, 200, 100000, DEFAULT_SETTINGS.batchCharBudget),
     maxSegmentsPerBatch: clampInt(merged.maxSegmentsPerBatch, 1, 100, DEFAULT_SETTINGS.maxSegmentsPerBatch),
+    customInstructions:
+      typeof merged.customInstructions === "string" ? merged.customInstructions.trim() : "",
   };
 }
 
 /** Project the provider-relevant subset for the translation backend. */
 export function toProviderConfig(s: InterlinearSettings): ProviderConfig {
-  return { apiKey: s.apiKey, baseUrl: s.baseUrl, model: s.model, targetLang: s.targetLang };
+  return {
+    apiKey: s.apiKey,
+    baseUrl: s.baseUrl,
+    model: s.model,
+    targetLang: s.targetLang,
+    customInstructions: s.customInstructions,
+  };
 }
 
 /** A translation can only run once an API key has been supplied (BYOK). */

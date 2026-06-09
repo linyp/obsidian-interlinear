@@ -131,6 +131,22 @@ export class InterlinearSettingTab extends PluginSettingTab {
     this.addNumberSetting(containerEl, "Max retries", "Retries after the first attempt (429 / transient errors).", "maxRetries", 0, 10);
     this.addNumberSetting(containerEl, "Batch char budget", "Characters packed into each request.", "batchCharBudget", 200, 100000);
     this.addNumberSetting(containerEl, "Max segments per request", "Max blocks packed into one request (also bounded by the char budget). Smaller is more reliable.", "maxSegmentsPerBatch", 1, 100);
+
+    new Setting(containerEl)
+      .setName("Custom instructions")
+      .setDesc(
+        "Optional. Appended to the translation system prompt — use it for a glossary, tone, or domain (e.g. \"Translate 'token' as 词元; keep a formal tone\"). Leave empty for the default."
+      )
+      .addTextArea((text) => {
+        text
+          .setPlaceholder("e.g. Use Taiwanese Mandarin terms; keep a formal register.")
+          .setValue(this.plugin.settings.customInstructions)
+          .onChange(async (value) => {
+            this.plugin.settings.customInstructions = value;
+            await this.plugin.saveSettings();
+          });
+        text.inputEl.rows = 4;
+      });
   }
 
   private addNumberSetting(

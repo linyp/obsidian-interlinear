@@ -13,6 +13,8 @@ export interface ProviderConfig {
   baseUrl: string;
   model: string;
   targetLang: string;
+  /** Optional user-provided instructions appended to the system prompt. */
+  customInstructions?: string;
 }
 
 export interface HttpRequestSpec {

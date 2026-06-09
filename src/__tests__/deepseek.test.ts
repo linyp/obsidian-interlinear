@@ -66,6 +66,23 @@ describe("buildChatRequest", () => {
     expect(p.toLowerCase()).toContain("only");
     expect(p.toLowerCase()).toContain("markdown");
   });
+
+  it("appends custom instructions AFTER the segment contract", () => {
+    const p = buildSystemPrompt("zh-CN", "Translate 'token' as 词元.");
+    expect(p).toContain("Translate 'token' as 词元.");
+    // The <<<SEG k>>> contract must still precede the user-provided text.
+    expect(p.indexOf("<<<SEG")).toBeLessThan(p.indexOf("Translate 'token' as 词元."));
+  });
+
+  it("leaves the system prompt unchanged for empty/whitespace custom instructions", () => {
+    expect(buildSystemPrompt("zh-CN", "")).toBe(buildSystemPrompt("zh-CN"));
+    expect(buildSystemPrompt("zh-CN", "   ")).toBe(buildSystemPrompt("zh-CN"));
+  });
+
+  it("flows custom instructions from config into the system message", () => {
+    const body = JSON.parse(buildChatRequest(["hi"], { ...cfg, customInstructions: "GLOSSARY-X" }).body);
+    expect(body.messages[0].content).toContain("GLOSSARY-X");
+  });
 });
 
 describe("parseChatResponse", () => {

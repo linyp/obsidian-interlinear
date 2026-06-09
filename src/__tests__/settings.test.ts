@@ -51,6 +51,12 @@ describe("normalizeSettings", () => {
     expect(s.batchCharBudget).toBe(DEFAULT_SETTINGS.batchCharBudget);
   });
 
+  it("trims custom instructions and coerces non-strings to empty", () => {
+    expect(normalizeSettings({ customInstructions: "  glossary  " }).customInstructions).toBe("glossary");
+    expect(normalizeSettings({ customInstructions: 42 as unknown as string }).customInstructions).toBe("");
+    expect(normalizeSettings({}).customInstructions).toBe("");
+  });
+
   it("only accepts valid display modes", () => {
     expect(normalizeSettings({ defaultDisplayMode: "translation-only" }).defaultDisplayMode).toBe(
       "translation-only"
@@ -69,6 +75,7 @@ describe("toProviderConfig / isConfigured", () => {
       baseUrl: "https://x",
       model: "m",
       targetLang: "fr",
+      customInstructions: "",
     });
   });
 

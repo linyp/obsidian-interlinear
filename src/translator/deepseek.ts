@@ -37,8 +37,13 @@ const SYSTEM_PROMPT_TEMPLATE = [
   "exact `<<<SEG k>>>` marker on its own line, followed by that segment's translation.",
 ].join("\n");
 
-export function buildSystemPrompt(targetLang: string): string {
-  return SYSTEM_PROMPT_TEMPLATE.replace("{{TARGET_LANG}}", targetLang);
+export function buildSystemPrompt(targetLang: string, customInstructions?: string): string {
+  const base = SYSTEM_PROMPT_TEMPLATE.replace("{{TARGET_LANG}}", targetLang);
+  const extra = customInstructions?.trim();
+  if (!extra) return base;
+  // Append AFTER the segment contract so user tweaks (glossary, tone, domain)
+  // can't silently drop the `<<<SEG k>>>` rules the batching relies on.
+  return `${base}\n\n## Additional instructions (user-provided)\n${extra}`;
 }
 
 function joinUrl(base: string, path: string): string {
@@ -50,7 +55,7 @@ export function buildChatRequest(segments: string[], cfg: ProviderConfig): HttpR
   const body = {
     model: cfg.model,
     messages: [
-      { role: "system", content: buildSystemPrompt(cfg.targetLang) },
+      { role: "system", content: buildSystemPrompt(cfg.targetLang, cfg.customInstructions) },
       { role: "user", content: packBatch(segments) },
     ],
     stream: false,

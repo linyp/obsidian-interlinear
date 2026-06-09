@@ -81,6 +81,7 @@ Open **Settings → Interlinear**:
 | Max retries | 3 | On 429 / transient errors. |
 | Batch char budget | 4000 | Characters packed per request. |
 | Max segments per request | 12 | Blocks packed per request, alongside the char budget (1–100). |
+| Custom instructions | _(empty)_ | Optional text appended to the system prompt — glossary, tone, or domain. |
 
 > DeepSeek's flash tier rate-limits by **concurrent connections**, not by RPM/TPM,
 > so the defaults run several requests in parallel with no spacing.
