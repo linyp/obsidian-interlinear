@@ -15,10 +15,23 @@ const prod = process.argv[2] === "production";
 // Dev convenience: point the build output at a test vault's plugin folder via
 //   INTERLINEAR_OUTDIR=/path/to/vault/.obsidian/plugins/interlinear npm run dev
 // Defaults to the repo root.
-const outdir =
-  process.env.INTERLINEAR_OUTDIR && process.env.INTERLINEAR_OUTDIR.length > 0
-    ? process.env.INTERLINEAR_OUTDIR
-    : ".";
+function resolveOutdir() {
+  const raw = process.env.INTERLINEAR_OUTDIR;
+  if (!raw || raw.length === 0) return ".";
+  // Guard: a non-absolute path (e.g. a quoted "~/..." that the shell never
+  // expanded) would write *inside the repo*. Refuse it and fall back to root.
+  if (!path.isAbsolute(raw)) {
+    console.warn(
+      `[interlinear] Ignoring INTERLINEAR_OUTDIR="${raw}": it must be an ABSOLUTE path. ` +
+        `A leading "~" is NOT expanded inside quotes — pass the full /Users/... path. ` +
+        `Building into the repo root instead.`
+    );
+    return ".";
+  }
+  return raw;
+}
+
+const outdir = resolveOutdir();
 
 fs.mkdirSync(outdir, { recursive: true });
 

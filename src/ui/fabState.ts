@@ -1,18 +1,11 @@
 /**
- * Pure FAB state machine. The single floating button does different things
- * depending on the current note's translation state — this reducer decides
- * which, and is unit-testable without any DOM/obsidian.
+ * Pure FAB state machine. The single floating button either starts translation
+ * or, once a note is active, toggles the display mode. Unit-testable with no DOM.
  */
-export type TranslateState = "untranslated" | "translating" | "translated";
+export type FabAction = "translate" | "toggle-mode";
 
-export type FabAction = "translate" | "busy" | "toggle-mode";
-
-const ACTION_BY_STATE: Record<TranslateState, FabAction> = {
-  untranslated: "translate", // first click translates
-  translating: "busy", // ignore clicks while a translation is in flight
-  translated: "toggle-mode", // subsequent clicks flip bilingual <-> translation-only
-};
-
-export function nextFabAction(state: TranslateState): FabAction {
-  return ACTION_BY_STATE[state];
+export function nextFabAction(active: boolean): FabAction {
+  // Not yet active -> a click activates translation; already active -> toggle mode
+  // (bilingual <-> translation-only), never a re-request.
+  return active ? "toggle-mode" : "translate";
 }

@@ -16,6 +16,7 @@ import type { DisplayMode } from "../settings";
 
 export const SOURCE_CLASS = "it-source";
 export const TRANSLATION_CLASS = "it-translation";
+export const OFFSCREEN_CLASS = "it-offscreen-render";
 export const MODE_BILINGUAL_CLASS = "it-mode-bilingual";
 export const MODE_TRANSLATION_ONLY_CLASS = "it-mode-translation-only";
 
@@ -76,8 +77,12 @@ export function describeBlock(el: HTMLElement): BlockDescriptor {
   };
 }
 
-function getTopLevelBlocks(container: HTMLElement): HTMLElement[] {
-  const all = Array.from(container.querySelectorAll<HTMLElement>(BLOCK_SELECTOR));
+function getTopLevelBlocks(root: HTMLElement): HTMLElement[] {
+  // Consider the root itself (the post-processor passes a block/section element)
+  // plus descendant blocks; the reading container itself won't match.
+  const all: HTMLElement[] = [];
+  if (root.matches(BLOCK_SELECTOR)) all.push(root);
+  all.push(...Array.from(root.querySelectorAll<HTMLElement>(BLOCK_SELECTOR)));
   // Keep only outermost blocks (drop e.g. <li>/<code> nested inside a kept block).
   return all.filter((el) => !all.some((other) => other !== el && other.contains(el)));
 }
@@ -91,6 +96,10 @@ export interface CollectedBlock {
 export function collectTranslatableBlocks(container: HTMLElement): CollectedBlock[] {
   const out: CollectedBlock[] = [];
   for (const el of getTopLevelBlocks(container)) {
+    // Skip our own injected translations (avoids recursive re-translation, since
+    // MarkdownRenderer.render runs post-processors on rendered content) and the
+    // hidden off-screen pre-translation container.
+    if (el.closest(`.${TRANSLATION_CLASS}, .${OFFSCREEN_CLASS}`)) continue;
     const descriptor = describeBlock(el);
     if (isTranslatable(descriptor)) out.push({ el, descriptor });
   }
@@ -125,6 +134,37 @@ export async function injectTranslation(
 
   await MarkdownRenderer.render(ctx.app, translatedMarkdown, node, ctx.sourcePath, ctx.component);
   return node;
+}
+
+/**
+ * Render the full note markdown into a hidden (but attached) element — a plain
+ * MarkdownRenderer.render is NOT virtualized, so this yields the WHOLE document —
+ * and return the de-duplicated translatable block texts. Lets us pre-translate
+ * the entire note so on-scroll rendering shows cached results instantly, without
+ * forcing the live reading view to scroll.
+ *
+ * `sourcePath` is intentionally empty so the plugin's own post-processor ignores
+ * this render (its onBlockRendered keys off the active note's real path).
+ */
+export async function collectSourceBlockTexts(
+  app: App,
+  markdown: string,
+  host: HTMLElement,
+  component: Component
+): Promise<string[]> {
+  const div = host.createDiv({ cls: OFFSCREEN_CLASS });
+  try {
+    await MarkdownRenderer.render(app, markdown, div, "", component);
+    const seen = new Set<string>();
+    for (const el of getTopLevelBlocks(div)) {
+      if (el.closest(`.${TRANSLATION_CLASS}`)) continue;
+      const descriptor = describeBlock(el);
+      if (isTranslatable(descriptor)) seen.add(descriptor.text);
+    }
+    return Array.from(seen);
+  } finally {
+    div.remove();
+  }
 }
 
 /** Remove all injected translations and source markers, restoring the original view. */

@@ -31,10 +31,12 @@ export default class InterlinearPlugin extends Plugin {
 
     this.addSettingTab(new InterlinearSettingTab(this.app, this));
 
-    // Reading-mode render hook. HARD CONSTRAINT: render phase never translates
-    // and never touches the network — original markdown renders untouched.
+    // Reading-mode render hook kept as the documented render-only boundary: it
+    // NEVER translates here. On-screen injection of (cached) translations is
+    // driven by a MutationObserver in the controller, because the reading view's
+    // post-processor does not fire reliably when sections render on scroll.
     this.registerMarkdownPostProcessor(() => {
-      /* no-op: translation is triggered ONLY by the FAB / commands */
+      /* no-op: translation is started only by the FAB / commands */
     });
 
     // Keep a FAB on the active reading view. Attaching the button is NOT a

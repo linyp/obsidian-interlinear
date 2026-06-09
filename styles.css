@@ -61,3 +61,15 @@
 .it-mode-translation-only .it-source {
   display: none;
 }
+
+/* Hidden off-screen container used to render the full note for pre-translation.
+   Kept renderable (not display:none) so block text is available, but invisible. */
+.it-offscreen-render {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  visibility: hidden;
+  pointer-events: none;
+  opacity: 0;
+}
