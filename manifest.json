@@ -3,7 +3,7 @@
   "name": "Interlinear",
   "version": "0.1.0",
   "minAppVersion": "1.4.0",
-  "description": "Reading-mode immersive translation: click a button to render side-by-side or translation-only Chinese alongside the original, without ever modifying your notes. BYOK (DeepSeek). Inspired by immersive translation.",
+  "description": "Reading-mode immersive translation: click to render the translation side-by-side or translation-only alongside the original, without ever modifying your notes. BYOK (DeepSeek). Inspired by immersive translation.",
   "author": "Yupeng Lin",
   "isDesktopOnly": false
 }
