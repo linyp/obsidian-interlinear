@@ -121,4 +121,28 @@ describe("chunkByBudget", () => {
   it("returns [] for no segments", () => {
     expect(chunkByBudget([], 10)).toEqual([]);
   });
+
+  it("caps the number of segments per chunk", () => {
+    const segs = [seg(0, "a"), seg(1, "b"), seg(2, "c"), seg(3, "d"), seg(4, "e")];
+    // Char budget is generous; the count cap of 2 is what splits them.
+    expect(chunkByBudget(segs, 1000, 2)).toEqual([
+      [seg(0, "a"), seg(1, "b")],
+      [seg(2, "c"), seg(3, "d")],
+      [seg(4, "e")],
+    ]);
+  });
+
+  it("splits on whichever cap is hit first (chars or count)", () => {
+    const segs = [seg(0, "aaaa"), seg(1, "b"), seg(2, "cccc")];
+    // Count cap 5 won't bite; the char budget 6 splits before "cccc".
+    expect(chunkByBudget(segs, 6, 5)).toEqual([
+      [seg(0, "aaaa"), seg(1, "b")],
+      [seg(2, "cccc")],
+    ]);
+  });
+
+  it("treats maxSegments as unbounded by default (backwards compatible)", () => {
+    const segs = Array.from({ length: 50 }, (_, i) => seg(i, "x"));
+    expect(chunkByBudget(segs, 1000)).toEqual([segs]);
+  });
 });

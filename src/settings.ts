@@ -22,6 +22,8 @@ export interface InterlinearSettings {
   maxRetries: number;
   /** Characters per packed batch request. */
   batchCharBudget: number;
+  /** Max blocks packed into one request (also bounded by batchCharBudget). */
+  maxSegmentsPerBatch: number;
 }
 
 export const DEFAULT_SETTINGS: InterlinearSettings = {
@@ -38,6 +40,11 @@ export const DEFAULT_SETTINGS: InterlinearSettings = {
   minIntervalMs: 0,
   maxRetries: 3,
   batchCharBudget: 4000,
+  // Independently of the char budget, cap segments per request: a doc of many
+  // short blocks could otherwise pack dozens of <<<SEG k>>> markers into one
+  // request, where the model is likelier to miscount and force the slow
+  // per-segment fallback. 12 stays reliable without fragmenting normal prose.
+  maxSegmentsPerBatch: 12,
 };
 
 function nonEmptyOr(value: unknown, fallback: string): string {
@@ -68,6 +75,7 @@ export function normalizeSettings(raw: unknown): InterlinearSettings {
     minIntervalMs: clampInt(merged.minIntervalMs, 0, 60000, DEFAULT_SETTINGS.minIntervalMs),
     maxRetries: clampInt(merged.maxRetries, 0, 10, DEFAULT_SETTINGS.maxRetries),
     batchCharBudget: clampInt(merged.batchCharBudget, 200, 100000, DEFAULT_SETTINGS.batchCharBudget),
+    maxSegmentsPerBatch: clampInt(merged.maxSegmentsPerBatch, 1, 100, DEFAULT_SETTINGS.maxSegmentsPerBatch),
   };
 }
 

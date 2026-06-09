@@ -2,7 +2,12 @@ import { App, PluginSettingTab, Setting } from "obsidian";
 import type InterlinearPlugin from "../main";
 import type { DisplayMode } from "../settings";
 
-type NumericSettingKey = "concurrency" | "minIntervalMs" | "maxRetries" | "batchCharBudget";
+type NumericSettingKey =
+  | "concurrency"
+  | "minIntervalMs"
+  | "maxRetries"
+  | "batchCharBudget"
+  | "maxSegmentsPerBatch";
 
 // Common target languages (friendly label + BCP-47 code). Users can still type
 // any other code via the "Custom" option.
@@ -125,6 +130,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
     this.addNumberSetting(containerEl, "Min interval (ms)", "Minimum spacing between request starts (ms).", "minIntervalMs", 0, 60000);
     this.addNumberSetting(containerEl, "Max retries", "Retries after the first attempt (429 / transient errors).", "maxRetries", 0, 10);
     this.addNumberSetting(containerEl, "Batch char budget", "Characters packed into each request.", "batchCharBudget", 200, 100000);
+    this.addNumberSetting(containerEl, "Max segments per request", "Max blocks packed into one request (also bounded by the char budget). Smaller is more reliable.", "maxSegmentsPerBatch", 1, 100);
   }
 
   private addNumberSetting(

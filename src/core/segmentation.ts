@@ -5,7 +5,7 @@
  *   render layer maps a translation back to its exact source block by index.
  * - `packBatch`/`unpackBatch` are the wire contract: numbered `<<<SEG k>>>`
  *   sentinels (one per line) survive arbitrary markdown far better than JSON.
- * - `chunkByBudget` packs by character budget to cut round-trips.
+ * - `chunkByBudget` packs by character budget AND a segment-count cap.
  */
 import { BlockDescriptor, isTranslatable } from "./blockRules";
 
@@ -84,10 +84,17 @@ export function unpackBatch(raw: string, expectedCount: number): UnpackResult {
 }
 
 /**
- * Group segments into chunks no larger than `maxChars` (by summed text length),
- * preserving order/indices. A single oversized segment gets its own chunk.
+ * Group segments into chunks bounded by BOTH a character budget and a maximum
+ * segment count, preserving order/indices. A single oversized segment gets its
+ * own chunk. The segment cap guards the `<<<SEG k>>>` contract: a doc of many
+ * short blocks could otherwise pack dozens of markers into one request, where
+ * the model is likelier to miscount. `maxSegments` defaults to unbounded.
  */
-export function chunkByBudget(segments: Segment[], maxChars: number): Segment[][] {
+export function chunkByBudget(
+  segments: Segment[],
+  maxChars: number,
+  maxSegments = Infinity
+): Segment[][] {
   const chunks: Segment[][] = [];
   let current: Segment[] = [];
   let currentLen = 0;
@@ -103,7 +110,9 @@ export function chunkByBudget(segments: Segment[], maxChars: number): Segment[][
       chunks.push([seg]);
       continue;
     }
-    if (current.length > 0 && currentLen + len > maxChars) {
+    const overChars = currentLen + len > maxChars;
+    const overCount = current.length >= maxSegments;
+    if (current.length > 0 && (overChars || overCount)) {
       chunks.push(current);
       current = [];
       currentLen = 0;

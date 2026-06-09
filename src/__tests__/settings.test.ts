@@ -33,11 +33,13 @@ describe("normalizeSettings", () => {
       minIntervalMs: -5,
       maxRetries: 99,
       batchCharBudget: 1.7,
+      maxSegmentsPerBatch: 999,
     });
     expect(s.concurrency).toBe(1); // min 1
     expect(s.minIntervalMs).toBe(0); // min 0
     expect(s.maxRetries).toBe(10); // max 10
     expect(s.batchCharBudget).toBe(200); // min 200
+    expect(s.maxSegmentsPerBatch).toBe(100); // max 100
   });
 
   it("coerces non-finite numbers to defaults", () => {

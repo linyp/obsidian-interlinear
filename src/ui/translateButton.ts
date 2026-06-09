@@ -309,7 +309,7 @@ export class TranslationController {
     this.paintStatusBar();
     try {
       const segments: Segment[] = misses.map((text, index) => ({ index, text }));
-      const chunks = chunkByBudget(segments, settings.batchCharBudget);
+      const chunks = chunkByBudget(segments, settings.batchCharBudget, settings.maxSegmentsPerBatch);
       const provider = new DeepSeekProvider({ config: toProviderConfig(settings), http: this.http });
 
       const tasks = chunks.map((chunk) => async () => {
@@ -372,7 +372,7 @@ export class TranslationController {
     for (const miss of misses) setBlockLoading(miss.el, true);
 
     const segments: Segment[] = misses.map((m, k) => ({ index: k, text: m.text }));
-    const chunks = chunkByBudget(segments, settings.batchCharBudget);
+    const chunks = chunkByBudget(segments, settings.batchCharBudget, settings.maxSegmentsPerBatch);
     const provider = new DeepSeekProvider({ config: toProviderConfig(settings), http: this.http });
 
     // Each task injects its blocks (and clears their spinners) as it completes.
