@@ -2,13 +2,10 @@
 
 **English** · [简体中文](README.zh-CN.md)
 
-Reading-mode **immersive translation** for [Obsidian](https://obsidian.md). Open a
+Reading-mode **interlinear translation** for [Obsidian](https://obsidian.md). Open a
 foreign-language note in reading view, click one button, and Interlinear renders a
 Chinese (or any target language) translation **alongside** the original — paragraph
 by paragraph, as bilingual or translation-only.
-
-> Inspired by the "immersive translation" reading experience. Not affiliated with,
-> and not using the name of, any commercial product.
 
 ## Why it's safe by design
 
@@ -44,15 +41,29 @@ by paragraph, as bilingual or translation-only.
 - **Pluggable backend** behind a `TranslationProvider` interface; **DeepSeek** is
   the default implementation. Requests use Obsidian's `requestUrl` (not `fetch`).
 
-## Install (manual)
+## Install
 
-Not yet in the community plugin store — install manually:
+Not yet in the community plugin store. Until then:
 
-1. `npm install`
-2. `npm run build` — produces `main.js`.
-3. Copy `main.js`, `manifest.json`, and `styles.css` into
-   `<your-vault>/.obsidian/plugins/interlinear/`, then enable the plugin in
-   **Settings → Community plugins**.
+### Via BRAT (recommended — auto-updates)
+
+1. Install and enable **[BRAT](https://github.com/TfTHacker/obsidian42-brat)**
+   from **Settings → Community plugins → Browse** (search "BRAT").
+2. Run the command **BRAT: Add a beta plugin for testing**.
+3. Enter the repository `linyp/obsidian-interlinear` and confirm.
+4. Enable **Interlinear** in **Settings → Community plugins**.
+
+BRAT pulls the latest GitHub release and keeps the plugin updated as new
+versions ship.
+
+### Manual
+
+1. Download `main.js`, `manifest.json`, and `styles.css` from the
+   [latest release](https://github.com/linyp/obsidian-interlinear/releases/latest).
+2. Put the three files in `<your-vault>/.obsidian/plugins/interlinear/`.
+3. Enable **Interlinear** in **Settings → Community plugins**.
+
+(To build from source instead, see [Develop](#develop).)
 
 ## Configure
 
@@ -154,5 +165,4 @@ every translation still maps 1:1 to its source block.
 
 ## License
 
-MIT. Inspired by the "immersive translation" reading experience; not affiliated
-with any commercial product.
+MIT

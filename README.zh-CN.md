@@ -2,11 +2,9 @@
 
 [English](README.md) · **简体中文**
 
-为 [Obsidian](https://obsidian.md) 打造的**阅读模式沉浸式翻译**插件。在阅读视图中打开一篇
+为 [Obsidian](https://obsidian.md) 打造的**阅读模式对照翻译**插件。在阅读视图中打开一篇
 外语笔记，点一下按钮，Interlinear 就会把它逐段翻成中文（或任意目标语言），**与原文对照**
 呈现——支持双语对照或仅译文两种模式。
-
-> 灵感来自「沉浸式翻译」的阅读体验。与任何商业产品无隶属关系，也不使用其名称。
 
 ## 为什么它在设计上是安全的
 
@@ -34,14 +32,28 @@
 - **可插拔后端**，抽象在 `TranslationProvider` 接口之后；**DeepSeek** 是默认实现。请求使用
   Obsidian 的 `requestUrl`（而非 `fetch`）。
 
-## 安装（手动）
+## 安装
 
-尚未上架社区插件商店，请手动安装：
+尚未上架社区插件商店，在此之前可用以下方式：
 
-1. `npm install`
-2. `npm run build`——产出 `main.js`。
-3. 把 `main.js`、`manifest.json`、`styles.css` 复制到
-   `<你的 vault>/.obsidian/plugins/interlinear/`，然后在 **设置 → 第三方插件** 中启用。
+### 通过 BRAT（推荐——可自动更新）
+
+1. 在 **设置 → 第三方插件 → 浏览** 中搜索并安装、启用
+   **[BRAT](https://github.com/TfTHacker/obsidian42-brat)**。
+2. 执行命令 **BRAT: Add a beta plugin for testing**。
+3. 填入仓库 `linyp/obsidian-interlinear` 并确认。
+4. 在 **设置 → 第三方插件** 中启用 **Interlinear**。
+
+BRAT 会拉取最新的 GitHub Release，并在你发布新版本时保持插件自动更新。
+
+### 手动安装
+
+1. 从 [最新 Release](https://github.com/linyp/obsidian-interlinear/releases/latest)
+   下载 `main.js`、`manifest.json`、`styles.css`。
+2. 把这三个文件放进 `<你的 vault>/.obsidian/plugins/interlinear/`。
+3. 在 **设置 → 第三方插件** 中启用 **Interlinear**。
+
+（若想从源码构建，见 [开发](#开发)。）
 
 ## 配置
 
@@ -133,4 +145,4 @@ src/
 
 ## 许可证
 
-MIT。灵感来自「沉浸式翻译」的阅读体验；与任何商业产品无隶属关系。
+MIT
