@@ -69,19 +69,33 @@ describe("blockRules", () => {
 });
 
 describe("isLikelyTargetLanguage", () => {
-  it("skips Chinese text when target is zh (incl. a few inline English terms)", () => {
+  it("skips Chinese when target is zh (incl. a few inline English terms)", () => {
     expect(isLikelyTargetLanguage("这是一段中文内容。", "zh-CN")).toBe(true);
     expect(isLikelyTargetLanguage("我用 React 和 TypeScript 写代码。", "zh-CN")).toBe(true);
   });
 
-  it("translates English text when target is zh (even with a couple Chinese chars)", () => {
+  it("translates English when target is zh (even with a couple Chinese chars)", () => {
     expect(isLikelyTargetLanguage("This is an English paragraph.", "zh-CN")).toBe(false);
     expect(isLikelyTargetLanguage("This English paragraph mentions 中文 once.", "zh-CN")).toBe(false);
   });
 
-  it("skips English when target is en, translates Chinese", () => {
-    expect(isLikelyTargetLanguage("A normal English sentence.", "en")).toBe(true);
-    expect(isLikelyTargetLanguage("整段中文内容。", "en")).toBe(false);
+  it("does not confuse Chinese and Japanese (kana disambiguates)", () => {
+    // target zh must NOT skip Japanese (kana present)
+    expect(isLikelyTargetLanguage("これは日本語の文章です。", "zh-CN")).toBe(false);
+    // target ja skips Japanese, but must translate Chinese (no kana)
+    expect(isLikelyTargetLanguage("これは日本語の文章です。", "ja")).toBe(true);
+    expect(isLikelyTargetLanguage("这是一段纯中文。", "ja")).toBe(false);
+  });
+
+  it("skips Korean when target is ko", () => {
+    expect(isLikelyTargetLanguage("이것은 한국어 문장입니다.", "ko")).toBe(true);
+    expect(isLikelyTargetLanguage("This is English.", "ko")).toBe(false);
+  });
+
+  it("does NOT skip for shared-script (Latin/Cyrillic) targets — avoids wrongly skipping a different same-script language", () => {
+    expect(isLikelyTargetLanguage("A normal English sentence.", "en")).toBe(false);
+    expect(isLikelyTargetLanguage("Ceci est un paragraphe en français.", "en")).toBe(false);
+    expect(isLikelyTargetLanguage("Это предложение на русском языке.", "ru")).toBe(false);
   });
 
   it("returns false for unknown target languages (translate to be safe)", () => {

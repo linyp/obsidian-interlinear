@@ -89,79 +89,51 @@ export function isTranslatable(b: BlockDescriptor): boolean {
 
 // --- "already in the target language?" heuristic ---------------------------
 //
-// Used to skip blocks that don't need translating (e.g. Chinese paragraphs when
-// the target is Chinese), so same-language content triggers no request. We tokenize
-// by script — each CJK character counts as one token, each run of Latin/Cyrillic/
-// Arabic letters counts as one (word) token — so a Chinese sentence with a few
+// Same-language detection is only RELIABLE across distinct scripts. A block in a
+// language-distinctive script (CJK, Thai, Hebrew, Greek) is almost certainly that
+// language, so we can skip it. For scripts SHARED by many languages (Latin →
+// en/fr/de/…, Cyrillic → ru/uk/…, Arabic → ar/fa/…, Devanagari → hi/mr/…) the
+// script cannot identify the language, so we DON'T skip (translate) — otherwise a
+// French block would be wrongly skipped when the target is English. Telling those
+// apart needs a real language detector; this heuristic stays deliberately safe.
+//
+// Counting is per token: each CJK/Thai character is one token, each run of letters
+// in an alphabetic script is one (word) token — so a Chinese sentence with a few
 // English terms still reads as mostly-Chinese.
 
-type TargetScript = "Han" | "Kana" | "Hangul" | "Latin" | "Cyrillic" | "Arabic";
+type ScriptBucket =
+  | "Han"
+  | "Kana"
+  | "Hangul"
+  | "Thai"
+  | "Latin"
+  | "Cyrillic"
+  | "Arabic"
+  | "Hebrew"
+  | "Greek"
+  | "Other";
 
-function charScript(ch: string): TargetScript | null {
+const PER_CHAR_SCRIPTS = new Set<ScriptBucket>(["Han", "Kana", "Hangul", "Thai"]);
+
+function charScript(ch: string): ScriptBucket | null {
+  if (!LETTER_RE.test(ch)) return null;
   if (/\p{Script=Han}/u.test(ch)) return "Han";
   if (/\p{Script=Hiragana}/u.test(ch) || /\p{Script=Katakana}/u.test(ch)) return "Kana";
   if (/\p{Script=Hangul}/u.test(ch)) return "Hangul";
+  if (/\p{Script=Thai}/u.test(ch)) return "Thai";
+  if (/\p{Script=Hebrew}/u.test(ch)) return "Hebrew";
+  if (/\p{Script=Greek}/u.test(ch)) return "Greek";
   if (/\p{Script=Latin}/u.test(ch)) return "Latin";
   if (/\p{Script=Cyrillic}/u.test(ch)) return "Cyrillic";
   if (/\p{Script=Arabic}/u.test(ch)) return "Arabic";
-  return null;
+  return "Other"; // any other letter (Devanagari, etc.) — counted but never a skip target
 }
 
-/** Map a BCP-47-ish target language to the script(s) its text is written in. */
-function targetScripts(targetLang: string): TargetScript[] | null {
-  const base = targetLang.trim().toLowerCase().split(/[-_]/)[0];
-  switch (base) {
-    case "zh":
-      return ["Han"];
-    case "ja":
-      return ["Han", "Kana"];
-    case "ko":
-      return ["Hangul"];
-    case "ru":
-    case "uk":
-    case "be":
-    case "bg":
-    case "sr":
-    case "mk":
-      return ["Cyrillic"];
-    case "ar":
-    case "fa":
-    case "ur":
-      return ["Arabic"];
-    case "en":
-    case "fr":
-    case "de":
-    case "es":
-    case "it":
-    case "pt":
-    case "nl":
-    case "sv":
-    case "da":
-    case "nb":
-    case "no":
-    case "fi":
-    case "pl":
-    case "tr":
-    case "id":
-    case "ms":
-    case "vi":
-    case "ro":
-    case "cs":
-    case "hu":
-    case "ca":
-      return ["Latin"];
-    default:
-      return null; // unknown target → don't skip (translate, to be safe)
-  }
-}
-
-const CJK_SCRIPTS = new Set<TargetScript>(["Han", "Kana", "Hangul"]);
-
-function scriptTokenCounts(text: string): { total: number; byScript: Map<TargetScript, number> } {
-  const byScript = new Map<TargetScript, number>();
+function scriptTokenCounts(text: string): { total: number; byScript: Map<ScriptBucket, number> } {
+  const byScript = new Map<ScriptBucket, number>();
   let total = 0;
-  let pendingWord: TargetScript | null = null;
-  const add = (s: TargetScript) => {
+  let pendingWord: ScriptBucket | null = null;
+  const add = (s: ScriptBucket) => {
     byScript.set(s, (byScript.get(s) ?? 0) + 1);
     total++;
   };
@@ -177,28 +149,67 @@ function scriptTokenCounts(text: string): { total: number; byScript: Map<TargetS
       flushWord(); // non-letter ends a word run
       continue;
     }
-    if (CJK_SCRIPTS.has(s)) {
+    if (PER_CHAR_SCRIPTS.has(s)) {
       flushWord();
-      add(s); // each CJK character is its own token
+      add(s); // each CJK/Thai character is its own token
     } else {
       if (pendingWord && pendingWord !== s) flushWord();
-      pendingWord = s; // accumulate a Latin/Cyrillic/Arabic word run
+      pendingWord = s; // accumulate an alphabetic-script word run
     }
   }
   flushWord();
   return { total, byScript };
 }
 
+/** Target languages whose script reliably identifies them (safe to skip). */
+function distinctiveTarget(targetLang: string): "zh" | "ja" | "ko" | "th" | "he" | "el" | null {
+  const base = targetLang.trim().toLowerCase().split(/[-_]/)[0];
+  switch (base) {
+    case "zh":
+      return "zh";
+    case "ja":
+      return "ja";
+    case "ko":
+      return "ko";
+    case "th":
+      return "th";
+    case "he":
+    case "iw":
+      return "he";
+    case "el":
+      return "el";
+    default:
+      return null; // shared-script or unknown language → can't tell apart → translate
+  }
+}
+
 /**
- * Heuristic: is the text already predominantly in the target language's script?
- * Returns false for unknown target languages or text with no letters.
+ * Heuristic: is the text already in the target language? Reliable only for
+ * language-distinctive scripts; returns false (→ translate) for shared-script
+ * targets (Latin/Cyrillic/Arabic/…) and unknown languages, so a different
+ * same-script language is never wrongly skipped.
  */
 export function isLikelyTargetLanguage(text: string, targetLang: string, threshold = 0.7): boolean {
-  const scripts = targetScripts(targetLang);
-  if (!scripts) return false;
+  const t = distinctiveTarget(targetLang);
+  if (!t) return false;
   const { total, byScript } = scriptTokenCounts(text);
   if (total === 0) return false;
-  let inTarget = 0;
-  for (const s of scripts) inTarget += byScript.get(s) ?? 0;
-  return inTarget / total >= threshold;
+  const n = (s: ScriptBucket): number => byScript.get(s) ?? 0;
+  const frac = (s: ScriptBucket): number => n(s) / total;
+  switch (t) {
+    case "ko":
+      return frac("Hangul") >= threshold;
+    case "ja":
+      return n("Kana") > 0 && (n("Han") + n("Kana")) / total >= threshold; // kana confirms Japanese
+    case "zh":
+      return n("Kana") === 0 && frac("Han") >= threshold; // Han-dominant, not Japanese
+    case "th":
+      return frac("Thai") >= threshold;
+    case "he":
+      return frac("Hebrew") >= threshold;
+    case "el":
+      return frac("Greek") >= threshold;
+    default:
+      return false;
+  }
 }
