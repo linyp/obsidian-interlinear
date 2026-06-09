@@ -1,7 +1,7 @@
 {
   "name": "interlinear",
   "version": "0.1.0",
-  "description": "Immersive-translation-style reading-mode translator for Obsidian (inspired by immersive translation; not affiliated).",
+  "description": "Interlinear — reading-mode immersive translation for Obsidian: render translations alongside the original, never modifying your notes. BYOK (DeepSeek). Inspired by immersive translation; not affiliated.",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
@@ -13,11 +13,21 @@
   "keywords": [
     "obsidian",
     "obsidian-plugin",
+    "interlinear",
     "translation",
+    "immersive-translation",
     "deepseek"
   ],
   "author": "Yupeng Lin",
   "license": "MIT",
+  "homepage": "https://github.com/linyp/obsidian-interlinear#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/linyp/obsidian-interlinear.git"
+  },
+  "bugs": {
+    "url": "https://github.com/linyp/obsidian-interlinear/issues"
+  },
   "devDependencies": {
     "@types/node": "^25.9.2",
     "builtin-modules": "^5.2.0",
