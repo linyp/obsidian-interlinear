@@ -135,7 +135,6 @@ export class TranslationController {
     } else {
       st.revealed = !st.revealed;
       this.applyView(active, st);
-      new Notice(st.revealed ? "Showing translation" : "Showing original");
       this.paintStatusBar();
     }
   }
@@ -151,7 +150,6 @@ export class TranslationController {
     st.mode = st.mode === "bilingual" ? "translation-only" : "bilingual";
     if (st.active && st.revealed) {
       applyDisplayMode(active.container, st.mode);
-      new Notice(st.mode === "bilingual" ? "Bilingual" : "Translation only");
     }
     this.paintStatusBar();
   }
@@ -206,14 +204,12 @@ export class TranslationController {
       return;
     }
     const st = this.stateFor(active.path);
-    const firstActivation = !st.active;
     st.active = true;
     st.revealed = true;
     this.failedTexts.delete(active.path); // re-click retries previously-failed blocks
     this.observe(active.container);
     this.applyView(active, st);
     this.paintStatusBar();
-    if (firstActivation) new Notice("Translating the whole note…");
 
     void this.syncVisible(active, st);
     void this.pretranslateWholeDoc(active);
@@ -342,7 +338,6 @@ export class TranslationController {
 
       if (authFailed) new Notice("DeepSeek authentication failed — check your API key.");
       else if (failed > 0) new Notice(`Whole-note translation: ${failed} batch(es) failed — trigger again to retry.`);
-      else new Notice("Whole note translated — scroll to reveal it instantly.");
     } finally {
       this.flushing.delete(active.path);
       this.paintStatusBar();
