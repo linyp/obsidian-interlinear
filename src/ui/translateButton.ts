@@ -26,6 +26,7 @@ import {
   collectSourceBlockTexts,
   collectTranslatableBlocks,
   injectTranslation,
+  setBlockLoading,
   CollectedBlock,
   InjectContext,
   TRANSLATION_CLASS,
@@ -172,6 +173,7 @@ export class FabController {
     st.active = true;
     this.failedTexts.delete(active.path); // re-click retries previously-failed blocks
     this.observe(active.container);
+    applyDisplayMode(active.container, st.mode); // set mode class up front (streaming injects)
     this.refreshFab(active.view);
     if (firstActivation) new Notice("正在翻译整篇…");
 
@@ -323,7 +325,7 @@ export class FabController {
     const { model, targetLang } = settings;
     const ctx: InjectContext = { app: this.app, sourcePath: path, component: this.component };
 
-    // Cache hits render immediately; misses are queued for translation.
+    // Cache hits render immediately; misses get a spinner until translated.
     const misses: Array<{ el: HTMLElement; text: string }> = [];
     for (const block of blocks) {
       const text = block.descriptor.text;
@@ -334,44 +336,49 @@ export class FabController {
         misses.push({ el: block.el, text });
       }
     }
+    if (container) applyDisplayMode(container, st.mode);
+    if (misses.length === 0) return;
 
+    for (const miss of misses) setBlockLoading(miss.el, true);
+
+    const segments: Segment[] = misses.map((m, k) => ({ index: k, text: m.text }));
+    const chunks = chunkByBudget(segments, settings.batchCharBudget);
+    const provider = new DeepSeekProvider({ config: toProviderConfig(settings), http: this.http });
+
+    // Each task injects its own translations as it completes, so spinners clear
+    // batch-by-batch (streaming feel) rather than all at the end.
+    const tasks = chunks.map((chunk) => async () => {
+      const translations = await provider.translate(chunk.map((s) => s.text));
+      for (let j = 0; j < chunk.length; j++) {
+        const miss = misses[chunk[j].index];
+        this.cache.set(miss.text, model, targetLang, translations[j]);
+        await injectTranslation(miss.el, translations[j], ctx);
+        setBlockLoading(miss.el, false);
+      }
+    });
+
+    const results = await runPool(tasks, {
+      concurrency: settings.concurrency,
+      minIntervalMs: settings.minIntervalMs,
+      maxRetries: settings.maxRetries,
+    });
+
+    const failedSet = this.failedTextsFor(path);
     let authFailed = false;
     let failed = 0;
-    if (misses.length > 0) {
-      const segments: Segment[] = misses.map((m, k) => ({ index: k, text: m.text }));
-      const chunks = chunkByBudget(segments, settings.batchCharBudget);
-      const provider = new DeepSeekProvider({ config: toProviderConfig(settings), http: this.http });
-
-      const tasks = chunks.map((chunk) => async () => {
-        const translations = await provider.translate(chunk.map((s) => s.text));
-        return chunk.map((s, j) => ({ missIdx: s.index, text: translations[j] }));
-      });
-
-      const results = await runPool(tasks, {
-        concurrency: settings.concurrency,
-        minIntervalMs: settings.minIntervalMs,
-        maxRetries: settings.maxRetries,
-      });
-
-      const failedSet = this.failedTextsFor(path);
-      for (let i = 0; i < results.length; i++) {
-        const result = results[i];
-        if (!result.ok) {
-          failed++;
-          if (result.error instanceof AuthError) authFailed = true;
-          for (const s of chunks[i]) failedSet.add(s.text); // don't retry these in a loop
-          continue;
-        }
-        for (const { missIdx, text } of result.value) {
-          const miss = misses[missIdx];
-          this.cache.set(miss.text, model, targetLang, text);
-          await injectTranslation(miss.el, text, ctx);
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      if (!result.ok) {
+        failed++;
+        if (result.error instanceof AuthError) authFailed = true;
+        for (const s of chunks[i]) {
+          setBlockLoading(misses[s.index].el, false); // clear spinner on failure
+          failedSet.add(s.text); // don't retry in a loop
         }
       }
     }
 
     if (container) applyDisplayMode(container, st.mode);
-
     if (authFailed) new Notice("DeepSeek 鉴权失败，请检查 API key");
     else if (failed > 0) new Notice(`有 ${failed} 批内容翻译失败，可重新触发以重试`);
   }

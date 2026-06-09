@@ -39,6 +39,26 @@
   background-color: var(--interactive-accent-hover);
 }
 
+/* Per-block "translating…" spinner, appended at the end of a block while its
+   translation is in flight; removed when the translation is injected. */
+.it-loading {
+  display: inline-block;
+  width: 0.8em;
+  height: 0.8em;
+  margin-inline-start: 0.4em;
+  vertical-align: -0.05em;
+  border: 2px solid var(--background-modifier-border);
+  border-top-color: var(--text-accent, var(--interactive-accent));
+  border-radius: 50%;
+  animation: it-spin 0.7s linear infinite;
+}
+
+@keyframes it-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 /* Injected translation node, rendered as a sibling after each source block. */
 .it-translation {
   margin: 0.2em 0 0.6em;

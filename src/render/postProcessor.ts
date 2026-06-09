@@ -17,6 +17,7 @@ import type { DisplayMode } from "../settings";
 export const SOURCE_CLASS = "it-source";
 export const TRANSLATION_CLASS = "it-translation";
 export const OFFSCREEN_CLASS = "it-offscreen-render";
+export const LOADING_CLASS = "it-loading";
 export const MODE_BILINGUAL_CLASS = "it-mode-bilingual";
 export const MODE_TRANSLATION_ONLY_CLASS = "it-mode-translation-only";
 
@@ -167,9 +168,20 @@ export async function collectSourceBlockTexts(
   }
 }
 
-/** Remove all injected translations and source markers, restoring the original view. */
+/** Show/hide a small spinner at the end of a block while it is being translated. */
+export function setBlockLoading(el: HTMLElement, loading: boolean): void {
+  const existing = el.querySelector<HTMLElement>(`:scope > .${LOADING_CLASS}`);
+  if (loading) {
+    if (!existing) el.createSpan({ cls: LOADING_CLASS, attr: { "aria-hidden": "true" } });
+  } else {
+    existing?.remove();
+  }
+}
+
+/** Remove all injected translations, loading spinners, and source markers. */
 export function clearTranslations(container: HTMLElement): void {
   container.querySelectorAll(`.${TRANSLATION_CLASS}`).forEach((n) => n.remove());
+  container.querySelectorAll(`.${LOADING_CLASS}`).forEach((n) => n.remove());
   container
     .querySelectorAll<HTMLElement>(`.${SOURCE_CLASS}`)
     .forEach((n) => n.removeClass(SOURCE_CLASS));
