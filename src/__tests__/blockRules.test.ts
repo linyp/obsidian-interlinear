@@ -4,6 +4,7 @@ import {
   classifyBlock,
   isTranslatable,
   hasTranslatableText,
+  isLikelyTargetLanguage,
 } from "../core/blockRules";
 
 function block(overrides: Partial<BlockDescriptor> = {}): BlockDescriptor {
@@ -64,5 +65,30 @@ describe("blockRules", () => {
     expect(isTranslatable(block({ text: "café" }))).toBe(true);
     expect(hasTranslatableText("Привет")).toBe(true);
     expect(hasTranslatableText("123")).toBe(false);
+  });
+});
+
+describe("isLikelyTargetLanguage", () => {
+  it("skips Chinese text when target is zh (incl. a few inline English terms)", () => {
+    expect(isLikelyTargetLanguage("这是一段中文内容。", "zh-CN")).toBe(true);
+    expect(isLikelyTargetLanguage("我用 React 和 TypeScript 写代码。", "zh-CN")).toBe(true);
+  });
+
+  it("translates English text when target is zh (even with a couple Chinese chars)", () => {
+    expect(isLikelyTargetLanguage("This is an English paragraph.", "zh-CN")).toBe(false);
+    expect(isLikelyTargetLanguage("This English paragraph mentions 中文 once.", "zh-CN")).toBe(false);
+  });
+
+  it("skips English when target is en, translates Chinese", () => {
+    expect(isLikelyTargetLanguage("A normal English sentence.", "en")).toBe(true);
+    expect(isLikelyTargetLanguage("整段中文内容。", "en")).toBe(false);
+  });
+
+  it("returns false for unknown target languages (translate to be safe)", () => {
+    expect(isLikelyTargetLanguage("anything 任何", "xx-YY")).toBe(false);
+  });
+
+  it("returns false when there are no letters", () => {
+    expect(isLikelyTargetLanguage("123 — 456 !!!", "zh-CN")).toBe(false);
   });
 });

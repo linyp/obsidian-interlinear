@@ -86,3 +86,119 @@ export function classifyBlock(b: BlockDescriptor): Classification {
 export function isTranslatable(b: BlockDescriptor): boolean {
   return classifyBlock(b).translatable;
 }
+
+// --- "already in the target language?" heuristic ---------------------------
+//
+// Used to skip blocks that don't need translating (e.g. Chinese paragraphs when
+// the target is Chinese), so same-language content triggers no request. We tokenize
+// by script — each CJK character counts as one token, each run of Latin/Cyrillic/
+// Arabic letters counts as one (word) token — so a Chinese sentence with a few
+// English terms still reads as mostly-Chinese.
+
+type TargetScript = "Han" | "Kana" | "Hangul" | "Latin" | "Cyrillic" | "Arabic";
+
+function charScript(ch: string): TargetScript | null {
+  if (/\p{Script=Han}/u.test(ch)) return "Han";
+  if (/\p{Script=Hiragana}/u.test(ch) || /\p{Script=Katakana}/u.test(ch)) return "Kana";
+  if (/\p{Script=Hangul}/u.test(ch)) return "Hangul";
+  if (/\p{Script=Latin}/u.test(ch)) return "Latin";
+  if (/\p{Script=Cyrillic}/u.test(ch)) return "Cyrillic";
+  if (/\p{Script=Arabic}/u.test(ch)) return "Arabic";
+  return null;
+}
+
+/** Map a BCP-47-ish target language to the script(s) its text is written in. */
+function targetScripts(targetLang: string): TargetScript[] | null {
+  const base = targetLang.trim().toLowerCase().split(/[-_]/)[0];
+  switch (base) {
+    case "zh":
+      return ["Han"];
+    case "ja":
+      return ["Han", "Kana"];
+    case "ko":
+      return ["Hangul"];
+    case "ru":
+    case "uk":
+    case "be":
+    case "bg":
+    case "sr":
+    case "mk":
+      return ["Cyrillic"];
+    case "ar":
+    case "fa":
+    case "ur":
+      return ["Arabic"];
+    case "en":
+    case "fr":
+    case "de":
+    case "es":
+    case "it":
+    case "pt":
+    case "nl":
+    case "sv":
+    case "da":
+    case "nb":
+    case "no":
+    case "fi":
+    case "pl":
+    case "tr":
+    case "id":
+    case "ms":
+    case "vi":
+    case "ro":
+    case "cs":
+    case "hu":
+    case "ca":
+      return ["Latin"];
+    default:
+      return null; // unknown target → don't skip (translate, to be safe)
+  }
+}
+
+const CJK_SCRIPTS = new Set<TargetScript>(["Han", "Kana", "Hangul"]);
+
+function scriptTokenCounts(text: string): { total: number; byScript: Map<TargetScript, number> } {
+  const byScript = new Map<TargetScript, number>();
+  let total = 0;
+  let pendingWord: TargetScript | null = null;
+  const add = (s: TargetScript) => {
+    byScript.set(s, (byScript.get(s) ?? 0) + 1);
+    total++;
+  };
+  const flushWord = () => {
+    if (pendingWord) {
+      add(pendingWord);
+      pendingWord = null;
+    }
+  };
+  for (const ch of text) {
+    const s = charScript(ch);
+    if (s === null) {
+      flushWord(); // non-letter ends a word run
+      continue;
+    }
+    if (CJK_SCRIPTS.has(s)) {
+      flushWord();
+      add(s); // each CJK character is its own token
+    } else {
+      if (pendingWord && pendingWord !== s) flushWord();
+      pendingWord = s; // accumulate a Latin/Cyrillic/Arabic word run
+    }
+  }
+  flushWord();
+  return { total, byScript };
+}
+
+/**
+ * Heuristic: is the text already predominantly in the target language's script?
+ * Returns false for unknown target languages or text with no letters.
+ */
+export function isLikelyTargetLanguage(text: string, targetLang: string, threshold = 0.7): boolean {
+  const scripts = targetScripts(targetLang);
+  if (!scripts) return false;
+  const { total, byScript } = scriptTokenCounts(text);
+  if (total === 0) return false;
+  let inTarget = 0;
+  for (const s of scripts) inTarget += byScript.get(s) ?? 0;
+  return inTarget / total >= threshold;
+}

@@ -27,6 +27,7 @@ import {
   InjectContext,
   TRANSLATION_CLASS,
 } from "../render/postProcessor";
+import { isLikelyTargetLanguage } from "../core/blockRules";
 import { chunkByBudget, Segment } from "../core/segmentation";
 import { runPool } from "../core/rateLimiter";
 import { DeepSeekProvider } from "../translator/deepseek";
@@ -255,10 +256,12 @@ export class TranslationController {
       return;
     }
     const failed = this.failedTexts.get(active.path);
+    const targetLang = this.getSettings().targetLang;
     const blocks = collectTranslatableBlocks(active.container).filter((b) => {
       const sib = b.el.nextElementSibling;
       if (sib && sib.hasClass(TRANSLATION_CLASS)) return false;
       if (failed && failed.has(b.descriptor.text)) return false;
+      if (isLikelyTargetLanguage(b.descriptor.text, targetLang)) return false; // already target lang
       return true;
     });
     if (blocks.length === 0) return;
@@ -294,7 +297,13 @@ export class TranslationController {
     }
 
     const { model, targetLang } = settings;
-    const misses = texts.filter((t) => this.cache.get(t, model, targetLang) === undefined);
+    // Skip blocks already written in the target language (no request needed).
+    const translatable = texts.filter((t) => !isLikelyTargetLanguage(t, targetLang));
+    if (translatable.length === 0) {
+      new Notice("当前内容已是目标语言，无需翻译");
+      return;
+    }
+    const misses = translatable.filter((t) => this.cache.get(t, model, targetLang) === undefined);
     if (misses.length === 0) {
       await this.syncVisible(active, this.stateFor(active.path));
       return;
