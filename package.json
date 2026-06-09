@@ -1,6 +1,6 @@
 {
   "name": "interlinear",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Interlinear — reading-mode immersive translation for Obsidian: render translations alongside the original, never modifying your notes. BYOK (DeepSeek). Inspired by immersive translation; not affiliated.",
   "main": "main.js",
   "scripts": {
