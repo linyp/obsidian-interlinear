@@ -126,7 +126,7 @@ export class TranslationController {
   toggleTranslate(): void {
     const active = this.getActiveReading();
     if (!active) {
-      new Notice("请在阅读模式下使用 Interlinear");
+      new Notice("Open a note in reading view to use Interlinear.");
       return;
     }
     const st = this.stateFor(active.path);
@@ -135,7 +135,7 @@ export class TranslationController {
     } else {
       st.revealed = !st.revealed;
       this.applyView(active, st);
-      new Notice(st.revealed ? "显示译文" : "显示原文");
+      new Notice(st.revealed ? "Showing translation" : "Showing original");
       this.paintStatusBar();
     }
   }
@@ -144,14 +144,14 @@ export class TranslationController {
   toggleMode(): void {
     const active = this.getActiveReading();
     if (!active) {
-      new Notice("请在阅读模式下使用 Interlinear");
+      new Notice("Open a note in reading view to use Interlinear.");
       return;
     }
     const st = this.stateFor(active.path);
     st.mode = st.mode === "bilingual" ? "translation-only" : "bilingual";
     if (st.active && st.revealed) {
       applyDisplayMode(active.container, st.mode);
-      new Notice(st.mode === "bilingual" ? "双语对照" : "仅译文");
+      new Notice(st.mode === "bilingual" ? "Bilingual" : "Translation only");
     }
     this.paintStatusBar();
   }
@@ -202,7 +202,7 @@ export class TranslationController {
 
   private activate(active: ActiveReading): void {
     if (!isConfigured(this.getSettings())) {
-      new Notice("请先在设置中填写 DeepSeek API key");
+      new Notice("Set your DeepSeek API key in Interlinear settings first.");
       return;
     }
     const st = this.stateFor(active.path);
@@ -213,7 +213,7 @@ export class TranslationController {
     this.observe(active.container);
     this.applyView(active, st);
     this.paintStatusBar();
-    if (firstActivation) new Notice("正在翻译整篇…");
+    if (firstActivation) new Notice("Translating the whole note…");
 
     void this.syncVisible(active, st);
     void this.pretranslateWholeDoc(active);
@@ -272,7 +272,7 @@ export class TranslationController {
     try {
       await this.translateBatch(blocks, active.container, active.path, this.getSettings(), st);
     } catch (err) {
-      new Notice("翻译失败：" + errorMessage(err));
+      new Notice("Translation failed: " + errorMessage(err));
     } finally {
       this.syncing.delete(active.path);
       this.flushing.delete(active.path);
@@ -300,7 +300,7 @@ export class TranslationController {
     // Skip blocks already written in the target language (no request needed).
     const translatable = texts.filter((t) => !isLikelyTargetLanguage(t, targetLang));
     if (translatable.length === 0) {
-      new Notice("当前内容已是目标语言，无需翻译");
+      new Notice("Already in the target language — nothing to translate.");
       return;
     }
     const misses = translatable.filter((t) => this.cache.get(t, model, targetLang) === undefined);
@@ -340,9 +340,9 @@ export class TranslationController {
         }
       }
 
-      if (authFailed) new Notice("DeepSeek 鉴权失败，请检查 API key");
-      else if (failed > 0) new Notice(`整篇翻译有 ${failed} 批失败，可重新触发重试`);
-      else new Notice("整篇已翻译，向下滚动即可即时显示");
+      if (authFailed) new Notice("DeepSeek authentication failed — check your API key.");
+      else if (failed > 0) new Notice(`Whole-note translation: ${failed} batch(es) failed — trigger again to retry.`);
+      else new Notice("Whole note translated — scroll to reveal it instantly.");
     } finally {
       this.flushing.delete(active.path);
       this.paintStatusBar();
@@ -413,8 +413,8 @@ export class TranslationController {
     }
 
     if (container) applyDisplayMode(container, st.mode);
-    if (authFailed) new Notice("DeepSeek 鉴权失败，请检查 API key");
-    else if (failed > 0) new Notice(`有 ${failed} 批内容翻译失败，可重新触发以重试`);
+    if (authFailed) new Notice("DeepSeek authentication failed — check your API key.");
+    else if (failed > 0) new Notice(`${failed} batch(es) failed — trigger again to retry.`);
   }
 
   private paintStatusBar(): void {
@@ -429,7 +429,7 @@ export class TranslationController {
       setIcon(this.translateIconEl, busy ? "loader" : st?.active && st.revealed ? "book-open" : "languages");
     }
     if (this.translateLabelEl) {
-      this.translateLabelEl.textContent = !st || !st.active ? "翻译" : st.revealed ? "显示原文" : "显示译文";
+      this.translateLabelEl.textContent = !st || !st.active ? "Translate" : st.revealed ? "Show original" : "Show translation";
     }
     this.translateBtn.toggleClass("is-disabled", !inReading);
     this.translateBtn.toggleClass("is-busy", busy);
@@ -440,7 +440,7 @@ export class TranslationController {
       setIcon(this.modeIconEl, st?.mode === "translation-only" ? "align-justify" : "columns-2");
     }
     if (this.modeLabelEl) {
-      this.modeLabelEl.textContent = st?.mode === "translation-only" ? "仅译文" : "双语";
+      this.modeLabelEl.textContent = st?.mode === "translation-only" ? "Translation only" : "Bilingual";
     }
     this.modeBtn.toggleClass("is-disabled", !modeUsable);
   }

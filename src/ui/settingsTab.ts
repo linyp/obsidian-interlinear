@@ -37,7 +37,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("DeepSeek API key")
-      .setDesc("BYOK — 仅保存在本地 data.json，不上传、不记录、不提交仓库。")
+      .setDesc("BYOK — stored only in the local data.json; never uploaded, logged, or committed.")
       .addText((text) => {
         text
           .setPlaceholder("sk-...")
@@ -51,7 +51,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Base URL")
-      .setDesc("OpenAI 兼容端点的基础地址")
+      .setDesc("Base address of the OpenAI-compatible endpoint.")
       .addText((text) =>
         text
           .setPlaceholder("https://api.deepseek.com")
@@ -75,10 +75,10 @@ export class InterlinearSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Target language")
-      .setDesc("译文目标语言")
+      .setDesc("Language to translate into.")
       .addDropdown((dropdown) => {
         for (const p of LANGUAGE_PRESETS) dropdown.addOption(p.value, p.label);
-        dropdown.addOption(CUSTOM_LANG, "自定义… (Custom)");
+        dropdown.addOption(CUSTOM_LANG, "Custom…");
         dropdown.setValue(showCustom ? CUSTOM_LANG : currentLang);
         dropdown.onChange(async (value) => {
           if (value === CUSTOM_LANG) {
@@ -95,10 +95,10 @@ export class InterlinearSettingTab extends PluginSettingTab {
     if (showCustom) {
       new Setting(containerEl)
         .setName("Custom language code")
-        .setDesc("任意 BCP-47 代码，如 th、it、pt-PT")
+        .setDesc("Any BCP-47 code, e.g. th, it, pt-PT.")
         .addText((text) =>
           text
-            .setPlaceholder("例如 th")
+            .setPlaceholder("e.g. th")
             .setValue(isPreset ? "" : currentLang)
             .onChange(async (value) => {
               this.plugin.settings.targetLang = value.trim() || "zh-CN";
@@ -109,11 +109,11 @@ export class InterlinearSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Default display mode")
-      .setDesc("首次翻译后的默认展示方式")
+      .setDesc("How translations are shown after the first translate.")
       .addDropdown((dropdown) =>
         dropdown
-          .addOption("bilingual", "双语对照")
-          .addOption("translation-only", "仅译文")
+          .addOption("bilingual", "Bilingual")
+          .addOption("translation-only", "Translation only")
           .setValue(this.plugin.settings.defaultDisplayMode)
           .onChange(async (value) => {
             this.plugin.settings.defaultDisplayMode = value as DisplayMode;
@@ -121,10 +121,10 @@ export class InterlinearSettingTab extends PluginSettingTab {
           })
       );
 
-    this.addNumberSetting(containerEl, "Concurrency", "并发请求数", "concurrency", 1, 16);
-    this.addNumberSetting(containerEl, "Min interval (ms)", "请求间隔（毫秒）", "minIntervalMs", 0, 60000);
-    this.addNumberSetting(containerEl, "Max retries", "失败重试次数（429/瞬时错误）", "maxRetries", 0, 10);
-    this.addNumberSetting(containerEl, "Batch char budget", "每批请求的字符预算", "batchCharBudget", 200, 100000);
+    this.addNumberSetting(containerEl, "Concurrency", "Max concurrent requests.", "concurrency", 1, 16);
+    this.addNumberSetting(containerEl, "Min interval (ms)", "Minimum spacing between request starts (ms).", "minIntervalMs", 0, 60000);
+    this.addNumberSetting(containerEl, "Max retries", "Retries after the first attempt (429 / transient errors).", "maxRetries", 0, 10);
+    this.addNumberSetting(containerEl, "Batch char budget", "Characters packed into each request.", "batchCharBudget", 200, 100000);
   }
 
   private addNumberSetting(
