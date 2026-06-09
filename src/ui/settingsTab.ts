@@ -4,8 +4,27 @@ import type { DisplayMode } from "../settings";
 
 type NumericSettingKey = "concurrency" | "minIntervalMs" | "maxRetries" | "batchCharBudget";
 
+// Common target languages (friendly label + BCP-47 code). Users can still type
+// any other code via the "Custom" option.
+const LANGUAGE_PRESETS: ReadonlyArray<{ value: string; label: string }> = [
+  { value: "zh-CN", label: "简体中文 (zh-CN)" },
+  { value: "zh-TW", label: "繁體中文 (zh-TW)" },
+  { value: "en", label: "English (en)" },
+  { value: "ja", label: "日本語 (ja)" },
+  { value: "ko", label: "한국어 (ko)" },
+  { value: "fr", label: "Français (fr)" },
+  { value: "de", label: "Deutsch (de)" },
+  { value: "es", label: "Español (es)" },
+  { value: "ru", label: "Русский (ru)" },
+  { value: "pt-BR", label: "Português (pt-BR)" },
+];
+const CUSTOM_LANG = "__custom__";
+
 export class InterlinearSettingTab extends PluginSettingTab {
   private readonly plugin: InterlinearPlugin;
+  // True once the user picks "Custom" in the dropdown (so the text field shows
+  // even while the stored value still happens to match a preset).
+  private customLangMode = false;
 
   constructor(app: App, plugin: InterlinearPlugin) {
     super(app, plugin);
@@ -50,15 +69,43 @@ export class InterlinearSettingTab extends PluginSettingTab {
       })
     );
 
+    const currentLang = this.plugin.settings.targetLang;
+    const isPreset = LANGUAGE_PRESETS.some((p) => p.value === currentLang);
+    const showCustom = this.customLangMode || !isPreset;
+
     new Setting(containerEl)
       .setName("Target language")
-      .setDesc("译文目标语言（如 zh-CN、en）")
-      .addText((text) =>
-        text.setValue(this.plugin.settings.targetLang).onChange(async (value) => {
-          this.plugin.settings.targetLang = value.trim() || "zh-CN";
-          await this.plugin.saveSettings();
-        })
-      );
+      .setDesc("译文目标语言")
+      .addDropdown((dropdown) => {
+        for (const p of LANGUAGE_PRESETS) dropdown.addOption(p.value, p.label);
+        dropdown.addOption(CUSTOM_LANG, "自定义… (Custom)");
+        dropdown.setValue(showCustom ? CUSTOM_LANG : currentLang);
+        dropdown.onChange(async (value) => {
+          if (value === CUSTOM_LANG) {
+            this.customLangMode = true;
+          } else {
+            this.customLangMode = false;
+            this.plugin.settings.targetLang = value;
+            await this.plugin.saveSettings();
+          }
+          this.display(); // re-render to show/hide the custom field
+        });
+      });
+
+    if (showCustom) {
+      new Setting(containerEl)
+        .setName("Custom language code")
+        .setDesc("任意 BCP-47 代码，如 th、it、pt-PT")
+        .addText((text) =>
+          text
+            .setPlaceholder("例如 th")
+            .setValue(isPreset ? "" : currentLang)
+            .onChange(async (value) => {
+              this.plugin.settings.targetLang = value.trim() || "zh-CN";
+              await this.plugin.saveSettings();
+            })
+        );
+    }
 
     new Setting(containerEl)
       .setName("Default display mode")
