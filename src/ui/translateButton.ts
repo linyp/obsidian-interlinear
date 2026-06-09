@@ -424,7 +424,7 @@ export class TranslationController {
       setIcon(this.translateIconEl, busy ? "loader" : st?.active && st.revealed ? "book-open" : "languages");
     }
     if (this.translateLabelEl) {
-      this.translateLabelEl.textContent = !st || !st.active ? "Translate" : st.revealed ? "Show original" : "Show translation";
+      this.translateLabelEl.textContent = !st || !st.active ? "Translate" : st.revealed ? "Translated" : "Original";
     }
     this.translateBtn.toggleClass("is-disabled", !inReading);
     this.translateBtn.toggleClass("is-busy", busy);
