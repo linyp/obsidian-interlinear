@@ -30,8 +30,12 @@ export const DEFAULT_SETTINGS: InterlinearSettings = {
   model: "deepseek-v4-flash",
   defaultDisplayMode: "bilingual",
   targetLang: "zh-CN",
-  concurrency: 3,
-  minIntervalMs: 300,
+  // DeepSeek rate-limits by concurrent connections (flash allows ~2500), NOT by
+  // RPM/TPM — so there's no point spacing requests (minIntervalMs: 0) and plenty
+  // of room to run several in parallel. Batch budget stays moderate to keep the
+  // per-segment marker contract reliable (large batches => more miscounts).
+  concurrency: 10,
+  minIntervalMs: 0,
   maxRetries: 3,
   batchCharBudget: 4000,
 };
