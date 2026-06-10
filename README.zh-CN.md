@@ -137,6 +137,17 @@ npm test           # vitest run
 npm run test:watch # vitest（watch）
 ```
 
+### 发版
+
+```bash
+npm version patch|minor|major  # 同步 package.json、manifest.json、versions.json
+git push && git push --tags
+```
+
+推送 tag 会触发 GitHub Actions workflow：自动测试、构建，并创建一个附带
+`main.js` / `manifest.json` / `styles.css` 三个独立资产的 **draft** release——
+检查无误后手动发布。
+
 ## 架构
 
 这个插件最棘手的地方在于：它的 UI / 渲染只能在 Obsidian 里验证。因此设计上把**所有可判定的

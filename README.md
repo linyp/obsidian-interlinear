@@ -160,6 +160,17 @@ npm test           # vitest run
 npm run test:watch # vitest (watch)
 ```
 
+### Release
+
+```bash
+npm version patch|minor|major  # syncs package.json, manifest.json, versions.json
+git push && git push --tags
+```
+
+Pushing the tag triggers the GitHub Actions workflow, which tests, builds, and
+creates a **draft** release with `main.js` / `manifest.json` / `styles.css`
+attached as individual assets — review the draft, then publish.
+
 ## Architecture
 
 The hard part of this plugin is that its UI/rendering can only be verified inside
