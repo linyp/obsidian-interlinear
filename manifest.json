@@ -3,7 +3,7 @@
   "name": "Interlinear",
   "version": "0.2.0",
   "minAppVersion": "1.4.0",
-  "description": "Reading-mode immersive translation: click to render the translation side-by-side or translation-only alongside the original, without ever modifying your notes. BYOK (DeepSeek). Inspired by immersive translation.",
+  "description": "Translate notes paragraph by paragraph in reading view — bilingual or translation-only alongside the original, without ever modifying your files. BYOK (DeepSeek or any OpenAI-compatible endpoint).",
   "author": "Yupeng Lin",
   "authorUrl": "https://github.com/linyp/obsidian-interlinear",
   "isDesktopOnly": false

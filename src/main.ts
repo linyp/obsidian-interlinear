@@ -6,7 +6,7 @@ import { TranslationController } from "./ui/translateButton";
 import { InterlinearSettingTab } from "./ui/settingsTab";
 
 /**
- * Interlinear — reading-mode immersive translation for Obsidian.
+ * Interlinear — reading-mode interlinear translation for Obsidian.
  *
  * Composition root. Hard constraints enforced here:
  *  - The markdown post-processor NEVER translates / hits the network.

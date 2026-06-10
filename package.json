@@ -1,7 +1,7 @@
 {
   "name": "interlinear",
   "version": "0.2.0",
-  "description": "Interlinear — reading-mode immersive translation for Obsidian: render translations alongside the original, never modifying your notes. BYOK (DeepSeek). Inspired by immersive translation; not affiliated.",
+  "description": "Interlinear — reading-mode interlinear translation for Obsidian: render translations alongside the original, never modifying your notes. BYOK (DeepSeek or any OpenAI-compatible endpoint).",
   "main": "main.js",
   "scripts": {
     "dev": "node esbuild.config.mjs",
@@ -16,7 +16,7 @@
     "obsidian-plugin",
     "interlinear",
     "translation",
-    "immersive-translation",
+    "bilingual",
     "deepseek"
   ],
   "author": "Yupeng Lin",
