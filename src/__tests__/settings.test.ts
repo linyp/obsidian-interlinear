@@ -69,8 +69,9 @@ describe("normalizeSettings", () => {
   });
 
   it("only accepts valid FAB visibilities and translation styles", () => {
-    expect(normalizeSettings({ showFab: "mobile" }).showFab).toBe("mobile");
-    expect(normalizeSettings({ showFab: "sometimes" as never }).showFab).toBe("always");
+    expect(normalizeSettings({ showFab: "always" }).showFab).toBe("always");
+    expect(normalizeSettings({ showFab: "sometimes" as never }).showFab).toBe("mobile");
+    expect(normalizeSettings({}).showFab).toBe("mobile"); // default: mobile only
     expect(normalizeSettings({ translationStyle: "mask" }).translationStyle).toBe("mask");
     expect(normalizeSettings({ translationStyle: "neon" as never }).translationStyle).toBe("border");
   });

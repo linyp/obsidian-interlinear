@@ -102,7 +102,7 @@ Open **Settings → Interlinear**:
 | Target language | `zh-CN` | e.g. `zh-CN`, `en`, `ja`. |
 | Default display mode | Bilingual | |
 | Translation style | Border | Border / quote / muted / dashed underline / learning mask. |
-| Floating button | Always | Always / mobile only / never. |
+| Floating button | Mobile only | Always / mobile only / never. |
 | Concurrency | 10 | Max in-flight requests (1–16). |
 | Min interval (ms) | 0 | Spacing between request starts. |
 | Max retries | 3 | On 429 / transient errors. |
@@ -117,9 +117,10 @@ Open **Settings → Interlinear**:
 ## Use
 
 1. Open a note and switch to **reading view**.
-2. Click the **floating button** in the lower-right (or **Translate** in the
-   status bar). It collects the translatable paragraphs, translates the whole
-   note, and shows live progress while batches are in flight.
+2. Click **Translate** in the status bar (desktop) or the **floating button**
+   in the lower-right (mobile). It collects the translatable paragraphs,
+   translates the whole note, and shows live progress while batches are in
+   flight.
 3. Click again to toggle the **translation ↔ original**.
 4. Use the small **mode** button (or the status-bar one) to toggle
    **bilingual ↔ translation-only** (instant — no new requests). In

@@ -96,7 +96,9 @@ export const DEFAULT_SETTINGS: InterlinearSettings = {
   // per-segment fallback. 12 stays reliable without fragmenting normal prose.
   maxSegmentsPerBatch: 12,
   customInstructions: "",
-  showFab: "always",
+  // Mobile has no status bar, so the FAB is the entry point there; desktop
+  // defaults to the status-bar buttons (FAB opt-in via "always").
+  showFab: "mobile",
   translationStyle: "border",
   persistCache: true,
 };
