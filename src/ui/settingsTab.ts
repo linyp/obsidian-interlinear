@@ -1,6 +1,16 @@
-import { App, PluginSettingTab, Setting } from "obsidian";
+import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type InterlinearPlugin from "../main";
-import type { DisplayMode } from "../settings";
+import {
+  matchPreset,
+  toProviderConfig,
+  isConfigured,
+  PROVIDER_PRESETS,
+  TRANSLATION_STYLES,
+} from "../settings";
+import type { DisplayMode, FabVisibility, TranslationStyle } from "../settings";
+import { DeepSeekProvider } from "../translator/deepseek";
+import { AuthError, RateLimitError } from "../translator/provider";
+import { obsidianRequestUrlClient } from "../translator/requestUrlClient";
 
 type NumericSettingKey =
   | "concurrency"
@@ -24,12 +34,24 @@ const LANGUAGE_PRESETS: ReadonlyArray<{ value: string; label: string }> = [
   { value: "pt-BR", label: "Português (pt-BR)" },
 ];
 const CUSTOM_LANG = "__custom__";
+const CUSTOM_PROVIDER = "__custom__";
+
+function testFailureMessage(err: unknown): string {
+  if (err instanceof AuthError) {
+    return "Authentication failed — the endpoint rejected your API key (401/403).";
+  }
+  if (err instanceof RateLimitError) {
+    return "Rate limited (429) — the key works, but the service is throttling requests.";
+  }
+  return "Connection failed: " + (err instanceof Error ? err.message : String(err));
+}
 
 export class InterlinearSettingTab extends PluginSettingTab {
   private readonly plugin: InterlinearPlugin;
-  // True once the user picks "Custom" in the dropdown (so the text field shows
+  // True once the user picks "Custom" in a dropdown (so the editable fields show
   // even while the stored value still happens to match a preset).
   private customLangMode = false;
+  private customProviderMode = false;
 
   constructor(app: App, plugin: InterlinearPlugin) {
     super(app, plugin);
@@ -39,9 +61,46 @@ export class InterlinearSettingTab extends PluginSettingTab {
   display(): void {
     const { containerEl } = this;
     containerEl.empty();
+    this.renderServiceSection(containerEl);
+    this.renderDisplaySection(containerEl);
+    this.renderAdvancedSection(containerEl);
+  }
+
+  // --- Translation service ---------------------------------------------------
+
+  private renderServiceSection(containerEl: HTMLElement): void {
+    new Setting(containerEl).setName("Translation service").setHeading();
+
+    const matched = matchPreset(this.plugin.settings.baseUrl);
+    const showCustomProvider = this.customProviderMode || matched === null;
 
     new Setting(containerEl)
-      .setName("DeepSeek API key")
+      .setName("Service preset")
+      .setDesc(
+        "Pre-fills the endpoint and model for common OpenAI-compatible services. Any /chat/completions endpoint works via Custom."
+      )
+      .addDropdown((dropdown) => {
+        for (const p of PROVIDER_PRESETS) dropdown.addOption(p.id, p.label);
+        dropdown.addOption(CUSTOM_PROVIDER, "Custom…");
+        dropdown.setValue(showCustomProvider ? CUSTOM_PROVIDER : (matched?.id ?? CUSTOM_PROVIDER));
+        dropdown.onChange(async (value) => {
+          if (value === CUSTOM_PROVIDER) {
+            this.customProviderMode = true;
+          } else {
+            this.customProviderMode = false;
+            const preset = PROVIDER_PRESETS.find((p) => p.id === value);
+            if (preset) {
+              this.plugin.settings.baseUrl = preset.baseUrl;
+              this.plugin.settings.model = preset.model;
+              await this.plugin.saveSettings();
+            }
+          }
+          this.display(); // re-render so the URL/model fields reflect the preset
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("API key")
       .setDesc("BYOK — stored only in the local data.json; never uploaded, logged, or committed.")
       .addText((text) => {
         text
@@ -73,6 +132,39 @@ export class InterlinearSettingTab extends PluginSettingTab {
         await this.plugin.saveSettings();
       })
     );
+
+    new Setting(containerEl)
+      .setName("Test connection")
+      .setDesc("Sends one tiny translation request with the settings above to verify the key and endpoint.")
+      .addButton((btn) => {
+        btn.setButtonText("Test").onClick(async () => {
+          if (!isConfigured(this.plugin.settings)) {
+            new Notice("Set an API key first (for local servers any non-empty value works).");
+            return;
+          }
+          btn.setDisabled(true);
+          btn.setButtonText("Testing…");
+          try {
+            const provider = new DeepSeekProvider({
+              config: toProviderConfig(this.plugin.settings),
+              http: obsidianRequestUrlClient,
+            });
+            const [sample] = await provider.translate(["Hello!"]);
+            new Notice(`Connection OK — sample translation: ${sample.slice(0, 60)}`);
+          } catch (err) {
+            new Notice(testFailureMessage(err), 8000);
+          } finally {
+            btn.setDisabled(false);
+            btn.setButtonText("Test");
+          }
+        });
+      });
+  }
+
+  // --- Display ---------------------------------------------------------------
+
+  private renderDisplaySection(containerEl: HTMLElement): void {
+    new Setting(containerEl).setName("Display").setHeading();
 
     const currentLang = this.plugin.settings.targetLang;
     const isPreset = LANGUAGE_PRESETS.some((p) => p.value === currentLang);
@@ -126,6 +218,44 @@ export class InterlinearSettingTab extends PluginSettingTab {
           })
       );
 
+    new Setting(containerEl)
+      .setName("Translation style")
+      .setDesc(
+        "Visual theme for translated text. \"Learning mask\" blurs translations until you hover — handy for language practice. In translation-only mode, hovering a translation always reveals its original."
+      )
+      .addDropdown((dropdown) => {
+        for (const s of TRANSLATION_STYLES) dropdown.addOption(s.value, s.label);
+        dropdown.setValue(this.plugin.settings.translationStyle).onChange(async (value) => {
+          this.plugin.settings.translationStyle = value as TranslationStyle;
+          await this.plugin.saveSettings();
+          this.plugin.refreshUi(); // restyle already-injected translations (CSS only)
+        });
+      });
+
+    new Setting(containerEl)
+      .setName("Floating button")
+      .setDesc(
+        "Shows a translate button in the lower-right of the reading view. On mobile this is the main entry point (there is no status bar)."
+      )
+      .addDropdown((dropdown) =>
+        dropdown
+          .addOption("always", "Always")
+          .addOption("mobile", "Mobile only")
+          .addOption("never", "Never")
+          .setValue(this.plugin.settings.showFab)
+          .onChange(async (value) => {
+            this.plugin.settings.showFab = value as FabVisibility;
+            await this.plugin.saveSettings();
+            this.plugin.refreshUi();
+          })
+      );
+  }
+
+  // --- Advanced ----------------------------------------------------------------
+
+  private renderAdvancedSection(containerEl: HTMLElement): void {
+    new Setting(containerEl).setName("Advanced").setHeading();
+
     this.addNumberSetting(containerEl, "Concurrency", "Max concurrent requests.", "concurrency", 1, 16);
     this.addNumberSetting(containerEl, "Min interval (ms)", "Minimum spacing between request starts (ms).", "minIntervalMs", 0, 60000);
     this.addNumberSetting(containerEl, "Max retries", "Retries after the first attempt (429 / transient errors).", "maxRetries", 0, 10);
@@ -147,6 +277,32 @@ export class InterlinearSettingTab extends PluginSettingTab {
           });
         text.inputEl.rows = 4;
       });
+
+    new Setting(containerEl)
+      .setName("Persistent cache")
+      .setDesc(
+        "Keep translations across restarts in the plugin folder (cache.json) so reopening a note costs nothing. Only translations and content hashes are stored — never your source text or API key."
+      )
+      .addToggle((toggle) =>
+        toggle.setValue(this.plugin.settings.persistCache).onChange(async (value) => {
+          this.plugin.settings.persistCache = value;
+          await this.plugin.saveSettings();
+          await this.plugin.onPersistCacheChanged(); // flush now / remove the file
+          this.display();
+        })
+      );
+
+    const approxKb = Math.round((this.plugin.cache.charSize * 2) / 1024);
+    new Setting(containerEl)
+      .setName("Cached translations")
+      .setDesc(`${this.plugin.cache.size} entries (~${approxKb} KB).`)
+      .addButton((btn) =>
+        btn.setButtonText("Clear cache").onClick(async () => {
+          await this.plugin.clearCacheCompletely();
+          new Notice("Translation cache cleared.");
+          this.display();
+        })
+      );
   }
 
   private addNumberSetting(

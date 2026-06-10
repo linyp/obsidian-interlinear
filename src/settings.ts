@@ -7,6 +7,48 @@ import { ProviderConfig } from "./translator/provider";
 
 export type DisplayMode = "bilingual" | "translation-only";
 
+/** Where the in-view floating button (FAB) is shown. */
+export type FabVisibility = "always" | "mobile" | "never";
+
+/** Visual theme applied to injected translations (pure CSS class swap). */
+export type TranslationStyle = "border" | "quote" | "muted" | "dashed" | "mask";
+
+export const TRANSLATION_STYLES: ReadonlyArray<{ value: TranslationStyle; label: string }> = [
+  { value: "border", label: "Border (default)" },
+  { value: "quote", label: "Quote block" },
+  { value: "muted", label: "Muted text" },
+  { value: "dashed", label: "Dashed underline" },
+  { value: "mask", label: "Learning mask (blur until hover)" },
+];
+
+/**
+ * OpenAI-compatible service presets. Picking one only pre-fills baseUrl/model —
+ * any endpoint speaking `/chat/completions` works via the Custom option.
+ */
+export interface ProviderPreset {
+  id: string;
+  label: string;
+  baseUrl: string;
+  model: string;
+}
+
+export const PROVIDER_PRESETS: ReadonlyArray<ProviderPreset> = [
+  { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash" },
+  { id: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
+  { id: "siliconflow", label: "SiliconFlow", baseUrl: "https://api.siliconflow.cn/v1", model: "deepseek-ai/DeepSeek-V3" },
+  { id: "ollama", label: "Ollama (local)", baseUrl: "http://localhost:11434/v1", model: "qwen2.5" },
+];
+
+function normalizeBaseUrl(url: string): string {
+  return url.trim().replace(/\/+$/, "").toLowerCase();
+}
+
+/** Find the preset matching a base URL (model may be customized freely). */
+export function matchPreset(baseUrl: string): ProviderPreset | null {
+  const norm = normalizeBaseUrl(baseUrl);
+  return PROVIDER_PRESETS.find((p) => normalizeBaseUrl(p.baseUrl) === norm) ?? null;
+}
+
 export interface InterlinearSettings {
   /** BYOK — stored only in local data.json; never logged, never committed. */
   apiKey: string;
@@ -26,6 +68,12 @@ export interface InterlinearSettings {
   maxSegmentsPerBatch: number;
   /** Optional extra instructions appended to the system prompt (glossary, tone, domain). */
   customInstructions: string;
+  /** Where the in-view floating button is shown (mobile has no status bar). */
+  showFab: FabVisibility;
+  /** Visual theme for injected translations. */
+  translationStyle: TranslationStyle;
+  /** Persist the translation cache to disk (plugin folder, never the notes). */
+  persistCache: boolean;
 }
 
 export const DEFAULT_SETTINGS: InterlinearSettings = {
@@ -48,7 +96,23 @@ export const DEFAULT_SETTINGS: InterlinearSettings = {
   // per-segment fallback. 12 stays reliable without fragmenting normal prose.
   maxSegmentsPerBatch: 12,
   customInstructions: "",
+  showFab: "always",
+  translationStyle: "border",
+  persistCache: true,
 };
+
+const FAB_VISIBILITIES: ReadonlyArray<FabVisibility> = ["always", "mobile", "never"];
+const TRANSLATION_STYLE_VALUES: ReadonlyArray<TranslationStyle> = [
+  "border",
+  "quote",
+  "muted",
+  "dashed",
+  "mask",
+];
+
+function oneOf<T extends string>(value: unknown, allowed: ReadonlyArray<T>, fallback: T): T {
+  return allowed.includes(value as T) ? (value as T) : fallback;
+}
 
 function nonEmptyOr(value: unknown, fallback: string): string {
   return typeof value === "string" && value.trim().length > 0 ? value.trim() : fallback;
@@ -81,6 +145,13 @@ export function normalizeSettings(raw: unknown): InterlinearSettings {
     maxSegmentsPerBatch: clampInt(merged.maxSegmentsPerBatch, 1, 100, DEFAULT_SETTINGS.maxSegmentsPerBatch),
     customInstructions:
       typeof merged.customInstructions === "string" ? merged.customInstructions.trim() : "",
+    showFab: oneOf(merged.showFab, FAB_VISIBILITIES, DEFAULT_SETTINGS.showFab),
+    translationStyle: oneOf(
+      merged.translationStyle,
+      TRANSLATION_STYLE_VALUES,
+      DEFAULT_SETTINGS.translationStyle
+    ),
+    persistCache: typeof merged.persistCache === "boolean" ? merged.persistCache : true,
   };
 }
 

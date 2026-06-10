@@ -12,7 +12,7 @@
 import { MarkdownRenderer } from "obsidian";
 import type { App, Component } from "obsidian";
 import { BlockDescriptor, BlockKind, isTranslatable } from "../core/blockRules";
-import type { DisplayMode } from "../settings";
+import type { DisplayMode, TranslationStyle } from "../settings";
 
 export const SOURCE_CLASS = "it-source";
 export const TRANSLATION_CLASS = "it-translation";
@@ -20,6 +20,13 @@ export const OFFSCREEN_CLASS = "it-offscreen-render";
 export const LOADING_CLASS = "it-loading";
 export const MODE_BILINGUAL_CLASS = "it-mode-bilingual";
 export const MODE_TRANSLATION_ONLY_CLASS = "it-mode-translation-only";
+/** Per-block marker toggled on tap (mobile) to reveal the original inline. */
+export const SHOW_SOURCE_CLASS = "it-show-source";
+
+const STYLE_CLASS_PREFIX = "it-style-";
+const ALL_STYLE_CLASSES: string[] = ["border", "quote", "muted", "dashed", "mask"].map(
+  (s) => STYLE_CLASS_PREFIX + s
+);
 
 const TAG_TO_KIND: Record<string, BlockKind> = {
   p: "p",
@@ -191,4 +198,10 @@ export function clearTranslations(container: HTMLElement): void {
 export function applyDisplayMode(container: HTMLElement, mode: DisplayMode): void {
   container.toggleClass(MODE_BILINGUAL_CLASS, mode === "bilingual");
   container.toggleClass(MODE_TRANSLATION_ONLY_CLASS, mode === "translation-only");
+}
+
+/** Switch the translation visual theme by class only — never re-requests. */
+export function applyTranslationStyle(container: HTMLElement, style: TranslationStyle): void {
+  for (const cls of ALL_STYLE_CLASSES) container.removeClass(cls);
+  container.addClass(STYLE_CLASS_PREFIX + style);
 }

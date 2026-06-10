@@ -8,6 +8,9 @@ main.js.map
 # Plugin data — holds the user's API key; MUST NOT be committed (BYOK, zero telemetry).
 data.json
 
+# Persistent translation cache (written next to the deployed plugin).
+cache.json
+
 # Misc
 *.log
 .DS_Store

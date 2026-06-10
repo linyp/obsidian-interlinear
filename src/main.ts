@@ -1,4 +1,4 @@
-import { Plugin } from "obsidian";
+import { Plugin, debounce } from "obsidian";
 import { DEFAULT_SETTINGS, InterlinearSettings, normalizeSettings } from "./settings";
 import { TranslationCache } from "./translator/cache";
 import { obsidianRequestUrlClient } from "./translator/requestUrlClient";
@@ -10,16 +10,22 @@ import { InterlinearSettingTab } from "./ui/settingsTab";
  *
  * Composition root. Hard constraints enforced here:
  *  - The markdown post-processor NEVER translates / hits the network.
- *  - Translation runs ONLY via the FAB or a command (never on note open).
- *  - Settings persist to data.json (plugin data, gitignored) — never the note body.
+ *  - Translation runs ONLY via the FAB / status bar / a command (never on note open).
+ *  - Settings persist to data.json, the translation cache to cache.json — both in
+ *    the plugin folder; note bodies are never written.
  */
 export default class InterlinearPlugin extends Plugin {
   settings: InterlinearSettings = DEFAULT_SETTINGS;
-  private readonly cache = new TranslationCache();
+  readonly cache = new TranslationCache();
   private controller!: TranslationController;
+
+  /** Trailing-edge debounce so a burst of cache writes becomes one disk flush. */
+  private readonly scheduleCacheFlush = debounce(() => void this.flushCache(), 3000, true);
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    await this.loadCacheFromDisk();
+    this.cache.onDirty = () => this.scheduleCacheFlush();
 
     this.controller = new TranslationController({
       app: this.app,
@@ -40,17 +46,17 @@ export default class InterlinearPlugin extends Plugin {
       /* no-op: translation is started only by the FAB / commands */
     });
 
-    // Refresh the status-bar buttons when the active note/layout changes. This is
+    // Refresh the FAB + status-bar buttons when the active note/layout changes.
     // NOT a translation trigger — translation only starts on an explicit click/command.
     this.registerEvent(this.app.workspace.on("active-leaf-change", () => this.controller.syncActiveView()));
     this.registerEvent(this.app.workspace.on("layout-change", () => this.controller.syncActiveView()));
     this.app.workspace.onLayoutReady(() => this.controller.syncActiveView());
 
+    // No default hotkey (community guideline): users bind their own under
+    // Settings → Hotkeys → "Interlinear: Translate / show original".
     this.addCommand({
       id: "toggle-translation",
       name: "Translate / show original",
-      // Default ⌥A (Alt = Option on macOS); rebindable in Settings → Hotkeys.
-      hotkeys: [{ modifiers: ["Alt"], key: "a" }],
       callback: () => this.controller.toggleTranslate(),
     });
     this.addCommand({
@@ -67,7 +73,8 @@ export default class InterlinearPlugin extends Plugin {
 
   onunload(): void {
     // register*/add* registrations are torn down automatically by Obsidian.
-    this.cache.clear();
+    this.scheduleCacheFlush.cancel();
+    void this.flushCache(); // best-effort final flush of the persistent cache
   }
 
   async loadSettings(): Promise<void> {
@@ -76,5 +83,65 @@ export default class InterlinearPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
+  }
+
+  /** Re-sync FAB/status bar/styles after a settings change. */
+  refreshUi(): void {
+    this.controller.syncActiveView();
+  }
+
+  // --- persistent cache (plugin folder only — never the notes) --------------
+
+  private cacheFilePath(): string {
+    const dir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
+    return `${dir}/cache.json`;
+  }
+
+  private async loadCacheFromDisk(): Promise<void> {
+    if (!this.settings.persistCache) return;
+    try {
+      const path = this.cacheFilePath();
+      if (!(await this.app.vault.adapter.exists(path))) return;
+      this.cache.hydrate(await this.app.vault.adapter.read(path));
+    } catch (err) {
+      console.error("Interlinear: failed to load translation cache", err);
+    }
+  }
+
+  private async flushCache(): Promise<void> {
+    if (!this.settings.persistCache) return;
+    try {
+      await this.app.vault.adapter.write(this.cacheFilePath(), this.cache.serialize());
+    } catch (err) {
+      console.error("Interlinear: failed to save translation cache", err);
+    }
+  }
+
+  /** Settings-tab action: wipe the cache in memory and on disk. */
+  async clearCacheCompletely(): Promise<void> {
+    this.scheduleCacheFlush.cancel();
+    this.cache.clear();
+    await this.removeCacheFile();
+  }
+
+  /** Settings-tab action: react to the persist-cache toggle. */
+  async onPersistCacheChanged(): Promise<void> {
+    if (this.settings.persistCache) {
+      await this.flushCache();
+    } else {
+      this.scheduleCacheFlush.cancel();
+      await this.removeCacheFile();
+    }
+  }
+
+  private async removeCacheFile(): Promise<void> {
+    try {
+      const path = this.cacheFilePath();
+      if (await this.app.vault.adapter.exists(path)) {
+        await this.app.vault.adapter.remove(path);
+      }
+    } catch (err) {
+      console.error("Interlinear: failed to remove translation cache file", err);
+    }
   }
 }

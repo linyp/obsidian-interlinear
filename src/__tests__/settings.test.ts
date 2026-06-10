@@ -4,6 +4,8 @@ import {
   normalizeSettings,
   toProviderConfig,
   isConfigured,
+  matchPreset,
+  PROVIDER_PRESETS,
 } from "../settings";
 
 describe("normalizeSettings", () => {
@@ -64,6 +66,52 @@ describe("normalizeSettings", () => {
     expect(normalizeSettings({ defaultDisplayMode: "weird" as never }).defaultDisplayMode).toBe(
       "bilingual"
     );
+  });
+
+  it("only accepts valid FAB visibilities and translation styles", () => {
+    expect(normalizeSettings({ showFab: "mobile" }).showFab).toBe("mobile");
+    expect(normalizeSettings({ showFab: "sometimes" as never }).showFab).toBe("always");
+    expect(normalizeSettings({ translationStyle: "mask" }).translationStyle).toBe("mask");
+    expect(normalizeSettings({ translationStyle: "neon" as never }).translationStyle).toBe("border");
+  });
+
+  it("persistCache defaults to true and only accepts booleans", () => {
+    expect(normalizeSettings({}).persistCache).toBe(true);
+    expect(normalizeSettings({ persistCache: false }).persistCache).toBe(false);
+    expect(normalizeSettings({ persistCache: "no" as never }).persistCache).toBe(true);
+  });
+});
+
+describe("provider presets", () => {
+  it("every preset has a usable baseUrl and model", () => {
+    for (const p of PROVIDER_PRESETS) {
+      expect(p.id.length).toBeGreaterThan(0);
+      expect(p.baseUrl).toMatch(/^https?:\/\//);
+      expect(p.model.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("preset ids are unique", () => {
+    const ids = PROVIDER_PRESETS.map((p) => p.id);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+
+  it("matches a preset by base URL, ignoring trailing slashes and case", () => {
+    expect(matchPreset("https://api.deepseek.com")?.id).toBe("deepseek");
+    expect(matchPreset("https://api.deepseek.com/")?.id).toBe("deepseek");
+    expect(matchPreset("HTTPS://API.DEEPSEEK.COM")?.id).toBe("deepseek");
+    expect(matchPreset("https://api.openai.com/v1")?.id).toBe("openai");
+  });
+
+  it("returns null for unknown endpoints (custom)", () => {
+    expect(matchPreset("https://my-proxy.example.com/v1")).toBeNull();
+    expect(matchPreset("")).toBeNull();
+  });
+
+  it("the DeepSeek preset matches the shipped defaults", () => {
+    const p = matchPreset(DEFAULT_SETTINGS.baseUrl);
+    expect(p?.id).toBe("deepseek");
+    expect(p?.model).toBe(DEFAULT_SETTINGS.model);
   });
 });
 

@@ -70,12 +70,46 @@
   }
 }
 
-/* Injected translation node, rendered as a sibling after each source block. */
+/* Injected translation node, rendered as a sibling after each source block.
+   The visual theme lives in the it-style-* rules below (class on the container). */
 .it-translation {
   margin: 0.2em 0 0.6em;
   color: var(--text-normal);
+}
+
+/* --- Translation style themes (switched by container class, CSS only) ------ */
+
+.it-style-border .it-translation {
   border-inline-start: 2px solid var(--background-modifier-border);
   padding-inline-start: 0.6em;
+}
+
+.it-style-quote .it-translation {
+  background-color: var(--background-secondary);
+  border-inline-start: 3px solid var(--interactive-accent);
+  border-radius: var(--radius-s);
+  padding: 0.4em 0.8em;
+}
+
+.it-style-muted .it-translation {
+  color: var(--text-muted);
+}
+
+.it-style-dashed .it-translation {
+  text-decoration: underline dashed var(--text-faint);
+  text-underline-offset: 4px;
+}
+
+/* Learning mask: translations stay blurred until hovered — language practice. */
+.it-style-mask .it-translation {
+  filter: blur(5px);
+  transition: filter 120ms ease-in-out;
+}
+
+.it-style-mask .it-translation:hover,
+.it-style-mask .it-translation.it-show-source {
+  /* .it-show-source is the tap-equivalent of hover on mobile. */
+  filter: none;
 }
 
 /* Original (source) block marker — no styling by default. */
@@ -93,6 +127,15 @@
   display: none;
 }
 
+/* Peek at the original without leaving translation-only mode: hovering a
+   translation (desktop) or tapping it (mobile adds .it-show-source) reveals
+   its source block inline, slightly dimmed. Pure CSS — no re-request. */
+.it-mode-translation-only .it-source:has(+ .it-translation:hover),
+.it-mode-translation-only .it-source:has(+ .it-translation.it-show-source) {
+  display: revert;
+  opacity: 0.6;
+}
+
 /* "Show original": hide all translations and force originals visible. Placed
    after the mode rules so it overrides translation-only. */
 .it-reveal-off .it-translation {
@@ -100,6 +143,94 @@
 }
 .it-reveal-off .it-source {
   display: revert;
+}
+
+/* --- Floating button (FAB) — bottom-right of the reading view -------------- */
+/* The mobile entry point (mobile has no status bar); optional on desktop.     */
+
+.it-fab {
+  position: absolute;
+  right: 24px;
+  bottom: 24px;
+  z-index: var(--layer-status-bar, 15);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.it-fab-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  cursor: pointer;
+  background-color: var(--interactive-normal);
+  border: 1px solid var(--background-modifier-border);
+  box-shadow: var(--shadow-s);
+  color: var(--text-muted);
+}
+
+.it-fab-btn:hover {
+  background-color: var(--interactive-hover);
+  color: var(--text-normal);
+}
+
+.it-fab-mode {
+  width: 32px;
+  height: 32px;
+}
+
+.it-fab-hidden {
+  display: none;
+}
+
+.it-fab-icon {
+  display: inline-flex;
+  align-items: center;
+}
+
+.it-fab .svg-icon {
+  width: 18px;
+  height: 18px;
+}
+
+.it-fab-mode .svg-icon {
+  width: 15px;
+  height: 15px;
+}
+
+.it-fab-btn.is-busy .it-fab-icon {
+  animation: it-spin 0.7s linear infinite;
+}
+
+/* While batches are in flight the main button shows "done/total" instead of
+   the icon (the changing number doubles as the activity indicator). */
+.it-fab-progress {
+  display: none;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.it-fab.has-progress .it-fab-main .it-fab-icon {
+  display: none;
+}
+
+.it-fab.has-progress .it-fab-progress {
+  display: block;
+}
+
+/* Comfortable touch targets on mobile. */
+.is-mobile .it-fab-btn {
+  width: 48px;
+  height: 48px;
+}
+
+.is-mobile .it-fab-mode {
+  width: 40px;
+  height: 40px;
 }
 
 /* Hidden off-screen container used to render the full note for pre-translation.
