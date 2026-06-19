@@ -6,6 +6,7 @@ import {
   isConfigured,
   matchPreset,
   applyProviderPreset,
+  providerConfigSignature,
   PROVIDER_PRESETS,
 } from "../settings";
 
@@ -187,6 +188,36 @@ describe("applyProviderPreset", () => {
   it("clamps a preset's out-of-range tuning via normalizeSettings", () => {
     const bad = { id: "x", label: "x", baseUrl: "https://x", model: "m", advanced: { concurrency: 999 } };
     expect(applyProviderPreset(base, bad).concurrency).toBe(16); // clamped to max
+  });
+});
+
+describe("providerConfigSignature", () => {
+  const base = normalizeSettings({ apiKey: "k", baseUrl: "https://x", model: "m", targetLang: "en" });
+
+  it("changes when any provider field changes", () => {
+    const sig = providerConfigSignature(base);
+    expect(providerConfigSignature(normalizeSettings({ ...base, apiKey: "k2" }))).not.toBe(sig);
+    expect(providerConfigSignature(normalizeSettings({ ...base, baseUrl: "https://y" }))).not.toBe(sig);
+    expect(providerConfigSignature(normalizeSettings({ ...base, model: "m2" }))).not.toBe(sig);
+    expect(providerConfigSignature(normalizeSettings({ ...base, targetLang: "ja" }))).not.toBe(sig);
+    expect(providerConfigSignature(normalizeSettings({ ...base, customInstructions: "glossary" }))).not.toBe(sig);
+  });
+
+  it("is stable when only non-provider fields change", () => {
+    const sig = providerConfigSignature(base);
+    expect(providerConfigSignature(normalizeSettings({ ...base, concurrency: 3 }))).toBe(sig);
+    expect(providerConfigSignature(normalizeSettings({ ...base, minIntervalMs: 500 }))).toBe(sig);
+    expect(providerConfigSignature(normalizeSettings({ ...base, maxRetries: 7 }))).toBe(sig);
+    expect(providerConfigSignature(normalizeSettings({ ...base, batchCharBudget: 1000 }))).toBe(sig);
+    expect(providerConfigSignature(normalizeSettings({ ...base, translationStyle: "mask" }))).toBe(sig);
+    expect(providerConfigSignature(normalizeSettings({ ...base, showFab: "always" }))).toBe(sig);
+    expect(providerConfigSignature(normalizeSettings({ ...base, persistCache: false }))).toBe(sig);
+    expect(providerConfigSignature(normalizeSettings({ ...base, defaultDisplayMode: "translation-only" }))).toBe(sig);
+  });
+
+  it("treats a preset switch as a config change (baseUrl/model differ)", () => {
+    const openai = PROVIDER_PRESETS.find((p) => p.id === "openai")!;
+    expect(providerConfigSignature(applyProviderPreset(base, openai))).not.toBe(providerConfigSignature(base));
   });
 });
 

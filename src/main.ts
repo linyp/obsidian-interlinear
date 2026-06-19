@@ -1,5 +1,10 @@
 import { Plugin, debounce } from "obsidian";
-import { DEFAULT_SETTINGS, InterlinearSettings, normalizeSettings } from "./settings";
+import {
+  DEFAULT_SETTINGS,
+  InterlinearSettings,
+  normalizeSettings,
+  providerConfigSignature,
+} from "./settings";
 import { TranslationCache } from "./translator/cache";
 import { obsidianRequestUrlClient } from "./translator/requestUrlClient";
 import { TranslationController } from "./ui/translateButton";
@@ -18,12 +23,15 @@ export default class InterlinearPlugin extends Plugin {
   settings: InterlinearSettings = DEFAULT_SETTINGS;
   readonly cache = new TranslationCache();
   private controller!: TranslationController;
+  /** Last seen provider-config signature; a change drops stale per-note failures. */
+  private lastConfigSig = "";
 
   /** Trailing-edge debounce so a burst of cache writes becomes one disk flush. */
   private readonly scheduleCacheFlush = debounce(() => void this.flushCache(), 3000, true);
 
   async onload(): Promise<void> {
     await this.loadSettings();
+    this.lastConfigSig = providerConfigSignature(this.settings);
     await this.loadCacheFromDisk();
     this.cache.onDirty = () => this.scheduleCacheFlush();
 
@@ -83,6 +91,27 @@ export default class InterlinearPlugin extends Plugin {
 
   async saveSettings(): Promise<void> {
     await this.saveData(this.settings);
+    this.reactToConfigChange();
+  }
+
+  /**
+   * Obsidian calls this when data.json is changed externally (e.g. Obsidian
+   * Sync pushing a different config from another device). Reload settings,
+   * react to any provider-config change, and refresh the UI.
+   */
+  async onExternalSettingsChange(): Promise<void> {
+    await this.loadSettings();
+    this.reactToConfigChange();
+    this.refreshUi();
+  }
+
+  /** If the provider config changed, drop stale per-note failures so they can
+   *  be retried under the new config (see TranslationController). */
+  private reactToConfigChange(): void {
+    const sig = providerConfigSignature(this.settings);
+    if (sig === this.lastConfigSig) return;
+    this.lastConfigSig = sig;
+    this.controller.onProviderConfigChanged();
   }
 
   /** Re-sync FAB/status bar/styles after a settings change. */

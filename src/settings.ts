@@ -240,3 +240,15 @@ export function toProviderConfig(s: InterlinearSettings): ProviderConfig {
 export function isConfigured(s: InterlinearSettings): boolean {
   return s.apiKey.trim().length > 0;
 }
+
+/**
+ * Signature of the translation-affecting config (the provider fields). A change
+ * means prior failures may now succeed and the cache identity (model/targetLang)
+ * may differ, so the controller drops its per-note "failed/skip" set when this
+ * changes — whether edited in settings or synced in externally. Rate/batch knobs
+ * (concurrency, retries, …) are intentionally excluded: they tune delivery, not
+ * the request's success criteria or result identity.
+ */
+export function providerConfigSignature(s: InterlinearSettings): string {
+  return JSON.stringify(toProviderConfig(s));
+}

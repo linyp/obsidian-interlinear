@@ -178,6 +178,21 @@ export class TranslationController {
     this.paint();
   }
 
+  /**
+   * The translation config changed (edited in settings, or synced in via
+   * onExternalSettingsChange). Drop every note's "failed/skip" set so blocks
+   * that failed under the old config (e.g. a wrong key/endpoint) are eligible
+   * again, then let the ALREADY-ACTIVE note re-attempt them. Only active notes
+   * (ones the user already chose to translate) re-sync — opening/switching a
+   * note still never translates on its own (hard constraint #1).
+   */
+  onProviderConfigChanged(): void {
+    this.failedTexts.clear();
+    // scheduleSync only re-runs when the active note is already `active`.
+    this.scheduleSync();
+    this.paint();
+  }
+
   clearActiveView(): void {
     const active = this.getActiveReading();
     if (!active) return;
