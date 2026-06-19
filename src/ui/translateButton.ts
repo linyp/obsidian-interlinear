@@ -152,6 +152,10 @@ export class TranslationController {
     const st = this.stateFor(active.path);
     if (!st.active) {
       this.activate(active);
+    } else if ((this.failedTexts.get(active.path)?.size ?? 0) > 0) {
+      // Blocks failed last time — re-triggering retries them (as the status/
+      // notice messages promise) instead of toggling translation ↔ original.
+      this.retryFailed(active, st);
     } else {
       st.revealed = !st.revealed;
       this.applyView(active, st);
@@ -219,20 +223,38 @@ export class TranslationController {
   }
 
   private activate(active: ActiveReading): void {
-    if (!isConfigured(this.getSettings())) {
-      new Notice("Set your DeepSeek API key in Interlinear settings first.");
-      return;
-    }
+    if (!this.ensureConfigured()) return;
     const st = this.stateFor(active.path);
     st.active = true;
     st.revealed = true;
-    this.failedTexts.delete(active.path); // re-click retries previously-failed blocks
     this.observe(active.container);
     this.applyView(active, st);
     this.paint();
+    this.runTranslation(active, st);
+  }
 
+  /** Re-trigger after a partial failure: retry the blocks that failed last time
+   *  (the status/notice messages promise this) rather than toggling reveal. */
+  private retryFailed(active: ActiveReading, st: FileState): void {
+    if (!this.ensureConfigured()) return;
+    st.revealed = true; // surface the retried translations
+    this.observe(active.container);
+    this.applyView(active, st);
+    this.paint();
+    this.runTranslation(active, st);
+  }
+
+  /** Clear the failed-block set and (re)run the visible + whole-doc flows. */
+  private runTranslation(active: ActiveReading, st: FileState): void {
+    this.failedTexts.delete(active.path); // re-attempt previously-failed blocks
     void this.syncVisible(active, st);
     void this.pretranslateWholeDoc(active);
+  }
+
+  private ensureConfigured(): boolean {
+    if (isConfigured(this.getSettings())) return true;
+    new Notice("Set your DeepSeek API key in Interlinear settings first.");
+    return false;
   }
 
   /** Apply reveal (translation vs original) + display mode + style via container classes. */
