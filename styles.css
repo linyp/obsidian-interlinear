@@ -129,8 +129,15 @@
 
 /* Peek at the original without leaving translation-only mode: hovering a
    translation (desktop) or tapping it (mobile adds .it-show-source) reveals
-   its source block inline, slightly dimmed. Pure CSS — no re-request. */
+   its source block inline, slightly dimmed. Pure CSS — no re-request.
+
+   The source sits BEFORE the translation in the DOM, so revealing it pushes the
+   hovered translation down — moving it out from under the cursor would end the
+   :hover, hide the source, snap the translation back, and re-trigger the hover:
+   a flicker loop. `.it-source:hover` latches the reveal: once shown, the source
+   (now under the cursor) keeps itself visible, so there's no feedback loop. */
 .it-mode-translation-only .it-source:has(+ .it-translation:hover),
+.it-mode-translation-only .it-source:hover,
 .it-mode-translation-only .it-source:has(+ .it-translation.it-show-source) {
   display: revert;
   opacity: 0.6;
