@@ -185,9 +185,26 @@
   color: var(--text-normal);
 }
 
+/* Primary (translate) button: accent fill so it clearly reads as the main
+   action, instead of looking like a twin of the neutral mode toggle above it. */
+.it-fab-main {
+  background-color: var(--interactive-accent);
+  border-color: var(--interactive-accent);
+  color: var(--text-on-accent);
+}
+
+/* Placed after .it-fab-btn:hover (equal specificity) so it wins by source order. */
+.it-fab-main:hover {
+  background-color: var(--interactive-accent-hover);
+  color: var(--text-on-accent);
+}
+
+/* Secondary mode toggle: neutral + smaller so the hierarchy is obvious. */
 .it-fab-mode {
   width: 32px;
   height: 32px;
+  background-color: var(--background-secondary-alt);
+  color: var(--text-muted);
 }
 
 .it-fab-hidden {
