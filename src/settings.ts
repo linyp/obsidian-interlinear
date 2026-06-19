@@ -21,22 +21,71 @@ export const TRANSLATION_STYLES: ReadonlyArray<{ value: TranslationStyle; label:
   { value: "mask", label: "Learning mask (blur until hover)" },
 ];
 
+/** The Advanced (rate/batch) knobs a preset can recommend for its service. */
+export type ProviderPresetAdvanced = Partial<
+  Pick<
+    InterlinearSettings,
+    "concurrency" | "minIntervalMs" | "maxRetries" | "batchCharBudget" | "maxSegmentsPerBatch"
+  >
+>;
+
 /**
- * OpenAI-compatible service presets. Picking one only pre-fills baseUrl/model —
- * any endpoint speaking `/chat/completions` works via the Custom option.
+ * OpenAI-compatible service presets. Picking one pre-fills baseUrl/model and —
+ * since each service rate-limits differently — its recommended Advanced tuning
+ * (see {@link applyProviderPreset}). Any endpoint speaking `/chat/completions`
+ * still works via the Custom option (which never touches Advanced).
  */
 export interface ProviderPreset {
   id: string;
   label: string;
   baseUrl: string;
   model: string;
+  /**
+   * Recommended Advanced tuning, applied (overwriting the current values) when
+   * this preset is selected. Conservative starting points keyed to each
+   * service's rate-limiting MODEL, not exact published quotas — users can raise
+   * them. A full set is declared so switching is deterministic regardless of
+   * the previously selected preset.
+   */
+  advanced?: ProviderPresetAdvanced;
 }
 
 export const PROVIDER_PRESETS: ReadonlyArray<ProviderPreset> = [
-  { id: "deepseek", label: "DeepSeek", baseUrl: "https://api.deepseek.com", model: "deepseek-v4-flash" },
-  { id: "openai", label: "OpenAI", baseUrl: "https://api.openai.com/v1", model: "gpt-4o-mini" },
-  { id: "siliconflow", label: "SiliconFlow", baseUrl: "https://api.siliconflow.cn/v1", model: "deepseek-ai/DeepSeek-V3" },
-  { id: "ollama", label: "Ollama (local)", baseUrl: "http://localhost:11434/v1", model: "qwen2.5" },
+  {
+    id: "deepseek",
+    label: "DeepSeek",
+    baseUrl: "https://api.deepseek.com",
+    model: "deepseek-v4-flash",
+    // Limited by concurrent connections with a very high cap (not RPM/TPM), so
+    // there's no point spacing requests and several can run in parallel.
+    advanced: { concurrency: 10, minIntervalMs: 0, maxRetries: 3, batchCharBudget: 4000, maxSegmentsPerBatch: 12 },
+  },
+  {
+    id: "openai",
+    label: "OpenAI",
+    baseUrl: "https://api.openai.com/v1",
+    model: "gpt-4o-mini",
+    // RPM/TPM tiered limits — low tiers 429 easily, so throttle starts and keep
+    // a spare retry (the API returns Retry-After, which the pool honors).
+    advanced: { concurrency: 4, minIntervalMs: 200, maxRetries: 4, batchCharBudget: 4000, maxSegmentsPerBatch: 12 },
+  },
+  {
+    id: "siliconflow",
+    label: "SiliconFlow",
+    baseUrl: "https://api.siliconflow.cn/v1",
+    model: "deepseek-ai/DeepSeek-V3",
+    // Also RPM/TPM tiered; free/low tiers are stricter — same conservative shape.
+    advanced: { concurrency: 4, minIntervalMs: 200, maxRetries: 4, batchCharBudget: 4000, maxSegmentsPerBatch: 12 },
+  },
+  {
+    id: "ollama",
+    label: "Ollama (local)",
+    baseUrl: "http://localhost:11434/v1",
+    model: "qwen2.5",
+    // No network limit but compute-bound with low default parallelism; a smaller
+    // local model also miscounts <<<SEG k>>> markers more, so keep batches small.
+    advanced: { concurrency: 2, minIntervalMs: 0, maxRetries: 2, batchCharBudget: 2000, maxSegmentsPerBatch: 6 },
+  },
 ];
 
 function normalizeBaseUrl(url: string): string {
@@ -47,6 +96,25 @@ function normalizeBaseUrl(url: string): string {
 export function matchPreset(baseUrl: string): ProviderPreset | null {
   const norm = normalizeBaseUrl(baseUrl);
   return PROVIDER_PRESETS.find((p) => normalizeBaseUrl(p.baseUrl) === norm) ?? null;
+}
+
+/**
+ * Settings produced by selecting a service preset: always sets baseUrl + model,
+ * and overwrites the current values with the preset's recommended Advanced
+ * tuning (only the fields it declares; the rest are kept). The result is run
+ * through {@link normalizeSettings} so every value stays clamped/valid. Pure +
+ * testable — the UI persists the returned object.
+ */
+export function applyProviderPreset(
+  current: InterlinearSettings,
+  preset: ProviderPreset
+): InterlinearSettings {
+  return normalizeSettings({
+    ...current,
+    baseUrl: preset.baseUrl,
+    model: preset.model,
+    ...preset.advanced,
+  });
 }
 
 export interface InterlinearSettings {

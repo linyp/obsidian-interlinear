@@ -94,7 +94,7 @@ Open **Settings → Interlinear**:
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| Service preset | DeepSeek | Pre-fills base URL + model: DeepSeek / OpenAI / SiliconFlow / Ollama / custom. |
+| Service preset | DeepSeek | Pre-fills base URL, model, and recommended rate/batch tuning (overwrites Advanced): DeepSeek / OpenAI / SiliconFlow / Ollama / custom. Custom leaves Advanced untouched. |
 | API key | _(empty)_ | Required (BYOK). Stored only in `data.json`. |
 | Base URL | `https://api.deepseek.com` | Any OpenAI-compatible endpoint. |
 | Model | `deepseek-v4-flash` | |
@@ -112,7 +112,10 @@ Open **Settings → Interlinear**:
 | Persistent cache | On | Keep translations across restarts; shows size and offers one-click clear. |
 
 > DeepSeek's flash tier rate-limits by **concurrent connections**, not by RPM/TPM,
-> so the defaults run several requests in parallel with no spacing.
+> so the defaults run several requests in parallel with no spacing. Selecting
+> another preset applies a more conservative tuning (lower concurrency + request
+> spacing for RPM/TPM-limited services like OpenAI/SiliconFlow; small batches for
+> a local Ollama model). Tune further to your account tier as needed.
 
 ## Use
 

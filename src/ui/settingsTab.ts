@@ -1,6 +1,7 @@
 import { App, Notice, PluginSettingTab, Setting } from "obsidian";
 import type InterlinearPlugin from "../main";
 import {
+  applyProviderPreset,
   matchPreset,
   toProviderConfig,
   isConfigured,
@@ -77,7 +78,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Service preset")
       .setDesc(
-        "Pre-fills the endpoint and model for common OpenAI-compatible services. Any /chat/completions endpoint works via Custom."
+        "Pre-fills the endpoint, model, and recommended rate/batch tuning for common OpenAI-compatible services (overwrites the Advanced values below). Any /chat/completions endpoint works via Custom, which leaves Advanced untouched."
       )
       .addDropdown((dropdown) => {
         for (const p of PROVIDER_PRESETS) dropdown.addOption(p.id, p.label);
@@ -90,12 +91,14 @@ export class InterlinearSettingTab extends PluginSettingTab {
             this.customProviderMode = false;
             const preset = PROVIDER_PRESETS.find((p) => p.id === value);
             if (preset) {
-              this.plugin.settings.baseUrl = preset.baseUrl;
-              this.plugin.settings.model = preset.model;
+              // Pre-fill endpoint/model AND the service's recommended Advanced
+              // tuning (overwrites current values — each service rate-limits
+              // differently). Custom leaves Advanced untouched.
+              this.plugin.settings = applyProviderPreset(this.plugin.settings, preset);
               await this.plugin.saveSettings();
             }
           }
-          this.display(); // re-render so the URL/model fields reflect the preset
+          this.display(); // re-render so the URL/model + Advanced fields reflect the preset
         });
       });
 

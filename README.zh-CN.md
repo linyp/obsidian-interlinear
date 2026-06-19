@@ -77,7 +77,7 @@ BRAT 会拉取最新的 GitHub Release，并在你发布新版本时保持插件
 
 | 设置项 | 默认值 | 说明 |
 | --- | --- | --- |
-| 服务预设 | DeepSeek | 一键填充端点 + 模型：DeepSeek / OpenAI / SiliconFlow / Ollama / 自定义。 |
+| 服务预设 | DeepSeek | 一键填充端点、模型，以及该服务推荐的限速/批量调优（会覆盖下方高级设置）：DeepSeek / OpenAI / SiliconFlow / Ollama / 自定义。选「自定义」则不改动高级设置。 |
 | API key | _（空）_ | 必填（BYOK）。仅存于 `data.json`。 |
 | Base URL | `https://api.deepseek.com` | 任意 OpenAI 兼容端点。 |
 | 模型 | `deepseek-v4-flash` | |
@@ -95,7 +95,9 @@ BRAT 会拉取最新的 GitHub Release，并在你发布新版本时保持插件
 | 持久化缓存 | 开 | 翻译结果跨重启保留；设置页显示大小并可一键清空。 |
 
 > DeepSeek 的 flash 档按**并发连接数**限流，而非按 RPM/TPM，因此默认配置以无间隔的方式
-> 并行发送多个请求。
+> 并行发送多个请求。切换到其他预设会套用更保守的调优（OpenAI / SiliconFlow 这类按
+> RPM/TPM 限流的服务会降低并发并加入请求间隔；本地 Ollama 模型则改用更小的批量）。
+> 可再按你的账户档位自行调整。
 
 ## 使用
 

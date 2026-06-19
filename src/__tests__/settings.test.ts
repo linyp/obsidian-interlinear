@@ -5,6 +5,7 @@ import {
   toProviderConfig,
   isConfigured,
   matchPreset,
+  applyProviderPreset,
   PROVIDER_PRESETS,
 } from "../settings";
 
@@ -113,6 +114,79 @@ describe("provider presets", () => {
     const p = matchPreset(DEFAULT_SETTINGS.baseUrl);
     expect(p?.id).toBe("deepseek");
     expect(p?.model).toBe(DEFAULT_SETTINGS.model);
+  });
+
+  it("every preset declares a full, in-range Advanced tuning block", () => {
+    for (const p of PROVIDER_PRESETS) {
+      expect(p.advanced).toBeDefined();
+      const adv = p.advanced!;
+      // Full set so switching is deterministic regardless of the prior preset.
+      expect(adv.concurrency).toBeGreaterThanOrEqual(1);
+      expect(adv.concurrency).toBeLessThanOrEqual(16);
+      expect(adv.minIntervalMs).toBeGreaterThanOrEqual(0);
+      expect(adv.maxRetries).toBeGreaterThanOrEqual(0);
+      expect(adv.batchCharBudget).toBeGreaterThanOrEqual(200);
+      expect(adv.maxSegmentsPerBatch).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it("the DeepSeek preset's Advanced tuning equals the shipped defaults", () => {
+    const ds = PROVIDER_PRESETS.find((p) => p.id === "deepseek")!;
+    expect(ds.advanced).toMatchObject({
+      concurrency: DEFAULT_SETTINGS.concurrency,
+      minIntervalMs: DEFAULT_SETTINGS.minIntervalMs,
+      maxRetries: DEFAULT_SETTINGS.maxRetries,
+      batchCharBudget: DEFAULT_SETTINGS.batchCharBudget,
+      maxSegmentsPerBatch: DEFAULT_SETTINGS.maxSegmentsPerBatch,
+    });
+  });
+});
+
+describe("applyProviderPreset", () => {
+  const base = normalizeSettings({ apiKey: "sk-keep", targetLang: "en", customInstructions: "glossary" });
+
+  it("sets baseUrl + model and the preset's Advanced tuning", () => {
+    const openai = PROVIDER_PRESETS.find((p) => p.id === "openai")!;
+    const s = applyProviderPreset(base, openai);
+    expect(s.baseUrl).toBe(openai.baseUrl);
+    expect(s.model).toBe(openai.model);
+    expect(s.concurrency).toBe(4);
+    expect(s.minIntervalMs).toBe(200);
+    expect(s.maxRetries).toBe(4);
+  });
+
+  it("overwrites previously customized Advanced values (overwrite semantics)", () => {
+    const tuned = normalizeSettings({ ...base, concurrency: 1, minIntervalMs: 5000, batchCharBudget: 800 });
+    const ollama = PROVIDER_PRESETS.find((p) => p.id === "ollama")!;
+    const s = applyProviderPreset(tuned, ollama);
+    expect(s.concurrency).toBe(2);
+    expect(s.minIntervalMs).toBe(0);
+    expect(s.batchCharBudget).toBe(2000);
+    expect(s.maxSegmentsPerBatch).toBe(6);
+  });
+
+  it("is deterministic regardless of the previously selected preset", () => {
+    const ollama = PROVIDER_PRESETS.find((p) => p.id === "ollama")!;
+    const openai = PROVIDER_PRESETS.find((p) => p.id === "openai")!;
+    const viaOllama = applyProviderPreset(applyProviderPreset(base, ollama), openai);
+    const direct = applyProviderPreset(base, openai);
+    // Ollama's small batch sizes must not leak into OpenAI's tuning.
+    expect(viaOllama.batchCharBudget).toBe(4000);
+    expect(viaOllama.maxSegmentsPerBatch).toBe(12);
+    expect(viaOllama).toEqual(direct);
+  });
+
+  it("preserves non-service settings (api key, target language, instructions)", () => {
+    const deepseek = PROVIDER_PRESETS.find((p) => p.id === "deepseek")!;
+    const s = applyProviderPreset(base, deepseek);
+    expect(s.apiKey).toBe("sk-keep");
+    expect(s.targetLang).toBe("en");
+    expect(s.customInstructions).toBe("glossary");
+  });
+
+  it("clamps a preset's out-of-range tuning via normalizeSettings", () => {
+    const bad = { id: "x", label: "x", baseUrl: "https://x", model: "m", advanced: { concurrency: 999 } };
+    expect(applyProviderPreset(base, bad).concurrency).toBe(16); // clamped to max
   });
 });
 
