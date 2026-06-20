@@ -50,17 +50,22 @@
 
 ## 安装
 
-尚未上架社区插件商店，在此之前可用以下方式：
+### 从 Obsidian 安装（推荐）
 
-### 通过 BRAT（推荐——可自动更新）
+1. 打开 **设置 → 第三方插件 → 浏览**。
+2. 搜索 **Interlinear**，点击 **安装**，然后**启用**。
+
+后续更新由 Obsidian 自动推送。
+
+### 通过 BRAT（抢先 / 测试版）
+
+想在新版进入插件商店之前就跟踪最新的 GitHub Release：
 
 1. 在 **设置 → 第三方插件 → 浏览** 中搜索并安装、启用
    **[BRAT](https://github.com/TfTHacker/obsidian42-brat)**。
 2. 执行命令 **BRAT: Add a beta plugin for testing**。
 3. 填入仓库 `linyp/obsidian-interlinear` 并确认。
 4. 在 **设置 → 第三方插件** 中启用 **Interlinear**。
-
-BRAT 会拉取最新的 GitHub Release，并在你发布新版本时保持插件自动更新。
 
 ### 手动安装
 

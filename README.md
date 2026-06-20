@@ -66,18 +66,22 @@ by paragraph, as bilingual or translation-only.
 
 ## Install
 
-Not yet in the community plugin store. Until then:
+### From Obsidian (recommended)
 
-### Via BRAT (recommended — auto-updates)
+1. Open **Settings → Community plugins → Browse**.
+2. Search for **Interlinear**, then select **Install** and **Enable**.
+
+Updates arrive automatically through Obsidian.
+
+### Via BRAT (early / beta builds)
+
+To track the latest GitHub release before it reaches the directory:
 
 1. Install and enable **[BRAT](https://github.com/TfTHacker/obsidian42-brat)**
    from **Settings → Community plugins → Browse** (search "BRAT").
 2. Run the command **BRAT: Add a beta plugin for testing**.
 3. Enter the repository `linyp/obsidian-interlinear` and confirm.
 4. Enable **Interlinear** in **Settings → Community plugins**.
-
-BRAT pulls the latest GitHub release and keeps the plugin updated as new
-versions ship.
 
 ### Manual
 
