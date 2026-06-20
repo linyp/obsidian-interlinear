@@ -96,7 +96,10 @@
 }
 
 .it-style-dashed .it-translation {
-  text-decoration: underline dashed var(--text-faint);
+  /* Longhand (not the `text-decoration` shorthand) for older Obsidian/Electron. */
+  text-decoration-line: underline;
+  text-decoration-style: dashed;
+  text-decoration-color: var(--text-faint);
   text-underline-offset: 4px;
 }
 
