@@ -52,7 +52,9 @@ export type PoolResult<T> =
   | { ok: false; error: unknown };
 
 const realSleep = (ms: number): Promise<void> =>
-  new Promise((resolve) => setTimeout(resolve, ms));
+  // window.setTimeout (not bare setTimeout) for popout-window compatibility.
+  // Only the production renderer reaches this default; tests inject `sleep`.
+  new Promise((resolve) => window.setTimeout(resolve, ms));
 
 /**
  * Run all tasks with bounded concurrency, start spacing, and retry/backoff.
@@ -66,7 +68,7 @@ export async function runPool<T>(
   const sleep = opts.sleep ?? realSleep;
   const now = opts.now ?? Date.now;
   const concurrency = Math.max(1, opts.concurrency);
-  const results: PoolResult<T>[] = new Array(tasks.length);
+  const results: PoolResult<T>[] = new Array<PoolResult<T>>(tasks.length);
 
   let nextIndex = 0;
   let lastStart = Number.NEGATIVE_INFINITY;
