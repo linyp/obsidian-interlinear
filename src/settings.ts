@@ -7,6 +7,27 @@ import { ProviderConfig } from "./translator/provider";
 
 export type DisplayMode = "bilingual" | "translation-only";
 
+/**
+ * Which translation backend to talk to.
+ *   - "openai": any OpenAI-compatible `/chat/completions` endpoint (DeepSeek /
+ *     OpenAI / SiliconFlow / Ollama / any custom URL). `baseUrl` is the API
+ *     origin, `model` picks the model.
+ *   - "baidu": Baidu's general translate API (documented at fanyi-api.baidu.com).
+ *     `baseUrl` carries the APP ID (repurposed), `apiKey` carries the secret;
+ *     `model` is not used by the wire protocol at all — cache identity is
+ *     derived from a stable constant via {@link cacheModel} so the field's
+ *     content never invalidates cached translations.
+ */
+export type ProviderKind = "openai" | "baidu";
+
+/**
+ * Stable cache-identity for the Baidu general translate API. The actual model
+ * name in settings is ignored for Baidu (there is no such wire field), so the
+ * cache key must not depend on whatever text happens to be sitting in the
+ * "Model" input — this constant takes its place.
+ */
+export const BAIDU_CACHE_MODEL = "baidu-general";
+
 /** Where the in-view floating button (FAB) is shown. */
 export type FabVisibility = "always" | "mobile" | "never";
 
@@ -30,14 +51,19 @@ export type ProviderPresetAdvanced = Partial<
 >;
 
 /**
- * OpenAI-compatible service presets. Picking one pre-fills baseUrl/model and —
- * since each service rate-limits differently — its recommended Advanced tuning
- * (see {@link applyProviderPreset}). Any endpoint speaking `/chat/completions`
- * still works via the Custom option (which never touches Advanced).
+ * OpenAI-compatible service presets, plus the Baidu general translate API.
+ * Picking one pre-fills baseUrl/model and — since each service rate-limits
+ * differently — its recommended Advanced tuning (see {@link applyProviderPreset}).
+ * Any OpenAI-compatible endpoint still works via the Custom option (which
+ * never touches Advanced). The Baidu preset switches `providerKind` to
+ * "baidu": the wire format differs entirely, and for that kind `baseUrl`
+ * holds the APP ID and `apiKey` holds the secret (see ProviderKind).
  */
 export interface ProviderPreset {
   id: string;
   label: string;
+  /** Which wire protocol this preset selects. Defaults to "openai". */
+  kind?: ProviderKind;
   baseUrl: string;
   model: string;
   /**
@@ -86,24 +112,58 @@ export const PROVIDER_PRESETS: ReadonlyArray<ProviderPreset> = [
     // local model also miscounts <<<SEG k>>> markers more, so keep batches small.
     advanced: { concurrency: 2, minIntervalMs: 0, maxRetries: 2, batchCharBudget: 2000, maxSegmentsPerBatch: 6 },
   },
+  {
+    id: "baidu",
+    label: "Baidu API",
+    kind: "baidu",
+    // For Baidu, `baseUrl` is repurposed to hold the APP ID (per user request:
+    // "API key" -> secret, "Base URL" -> APP ID). Leave it empty in the preset
+    // so switching in doesn't clobber a previously configured APP ID. The wire
+    // endpoint is hard-coded inside the Baidu provider.
+    baseUrl: "",
+    // Baidu has no "model" concept; the field is displayed but ignored on the
+    // wire. Blank in the preset so switching in doesn't stamp a misleading name.
+    model: "",
+    // Standard-tier Baidu is QPS=1 (higher tiers are 10 / 100). Keep the fleet
+    // small and space starts by ~1.1s so the standard tier passes untuned;
+    // small batches also keep per-segment line accounting reliable.
+    advanced: { concurrency: 1, minIntervalMs: 1100, maxRetries: 3, batchCharBudget: 2000, maxSegmentsPerBatch: 8 },
+  },
 ];
 
 function normalizeBaseUrl(url: string): string {
   return url.trim().replace(/\/+$/, "").toLowerCase();
 }
 
-/** Find the preset matching a base URL (model may be customized freely). */
-export function matchPreset(baseUrl: string): ProviderPreset | null {
-  const norm = normalizeBaseUrl(baseUrl);
-  return PROVIDER_PRESETS.find((p) => normalizeBaseUrl(p.baseUrl) === norm) ?? null;
+/**
+ * Find the preset matching the current settings.
+ *
+ * Kind-first, then base URL:
+ *   - `providerKind: "baidu"` is a hard signal — the base URL is a user-supplied
+ *     APP ID, not a service origin, so we identify the preset by kind alone.
+ *     Any preset carrying `kind: "baidu"` wins; falling back to the base-URL
+ *     match would incorrectly land on Custom (or on a URL-shaped APP ID).
+ *   - Otherwise we match an OpenAI-compatible preset by normalized base URL
+ *     (trailing-slash / case insensitive; model may be customized freely).
+ */
+export function matchPreset(settings: InterlinearSettings): ProviderPreset | null {
+  if (settings.providerKind === "baidu") {
+    return PROVIDER_PRESETS.find((p) => p.kind === "baidu") ?? null;
+  }
+  const norm = normalizeBaseUrl(settings.baseUrl);
+  return (
+    PROVIDER_PRESETS.find((p) => (p.kind ?? "openai") === "openai" && normalizeBaseUrl(p.baseUrl) === norm) ??
+    null
+  );
 }
 
 /**
  * Settings produced by selecting a service preset: always sets baseUrl + model,
- * and overwrites the current values with the preset's recommended Advanced
- * tuning (only the fields it declares; the rest are kept). The result is run
- * through {@link normalizeSettings} so every value stays clamped/valid. Pure +
- * testable — the UI persists the returned object.
+ * switches providerKind to the preset's kind ("openai" by default), and
+ * overwrites the current values with the preset's recommended Advanced tuning
+ * (only the fields it declares; the rest are kept). The result is run through
+ * {@link normalizeSettings} so every value stays clamped/valid. Pure + testable
+ * — the UI persists the returned object.
  */
 export function applyProviderPreset(
   current: InterlinearSettings,
@@ -111,6 +171,7 @@ export function applyProviderPreset(
 ): InterlinearSettings {
   return normalizeSettings({
     ...current,
+    providerKind: preset.kind ?? "openai",
     baseUrl: preset.baseUrl,
     model: preset.model,
     ...preset.advanced,
@@ -118,6 +179,12 @@ export function applyProviderPreset(
 }
 
 export interface InterlinearSettings {
+  /**
+   * Which backend protocol to speak. Also decides how baseUrl/model are used —
+   * see {@link ProviderKind}. Defaults to "openai" for backward compatibility
+   * with settings saved before this field existed.
+   */
+  providerKind: ProviderKind;
   /** BYOK — stored only in local data.json; never logged, never committed. */
   apiKey: string;
   baseUrl: string;
@@ -145,6 +212,7 @@ export interface InterlinearSettings {
 }
 
 export const DEFAULT_SETTINGS: InterlinearSettings = {
+  providerKind: "openai",
   apiKey: "",
   baseUrl: "https://api.deepseek.com",
   model: "deepseek-v4-flash",
@@ -179,6 +247,7 @@ const TRANSLATION_STYLE_VALUES: ReadonlyArray<TranslationStyle> = [
   "dashed",
   "mask",
 ];
+const PROVIDER_KINDS: ReadonlyArray<ProviderKind> = ["openai", "baidu"];
 
 function oneOf<T extends string>(value: unknown, allowed: ReadonlyArray<T>, fallback: T): T {
   return allowed.includes(value as T) ? (value as T) : fallback;
@@ -201,10 +270,25 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
 export function normalizeSettings(raw: unknown): InterlinearSettings {
   const r = (raw && typeof raw === "object" ? raw : {}) as Partial<InterlinearSettings>;
   const merged = { ...DEFAULT_SETTINGS, ...r };
+  const providerKind = oneOf(merged.providerKind, PROVIDER_KINDS, DEFAULT_SETTINGS.providerKind);
+  // For OpenAI-compatible endpoints, an empty baseUrl/model is meaningless, so
+  // fall back to the DeepSeek defaults. For Baidu, `baseUrl` carries the APP ID
+  // and `model` is unused — those defaults would be actively WRONG there, so
+  // preserve whatever the user has entered (even if empty; isConfigured will
+  // then simply gate translation until they fill it in).
+  const baseUrl =
+    providerKind === "baidu"
+      ? typeof merged.baseUrl === "string" ? merged.baseUrl.trim() : ""
+      : nonEmptyOr(merged.baseUrl, DEFAULT_SETTINGS.baseUrl);
+  const model =
+    providerKind === "baidu"
+      ? typeof merged.model === "string" ? merged.model.trim() : ""
+      : nonEmptyOr(merged.model, DEFAULT_SETTINGS.model);
   return {
+    providerKind,
     apiKey: typeof merged.apiKey === "string" ? merged.apiKey : "",
-    baseUrl: nonEmptyOr(merged.baseUrl, DEFAULT_SETTINGS.baseUrl),
-    model: nonEmptyOr(merged.model, DEFAULT_SETTINGS.model),
+    baseUrl,
+    model,
     defaultDisplayMode:
       merged.defaultDisplayMode === "translation-only" ? "translation-only" : "bilingual",
     targetLang: nonEmptyOr(merged.targetLang, DEFAULT_SETTINGS.targetLang),
@@ -225,6 +309,16 @@ export function normalizeSettings(raw: unknown): InterlinearSettings {
   };
 }
 
+/**
+ * Cache-identity for the current settings. Substitutes a stable constant for
+ * "model" on backends that don't have a model field (Baidu), so the cache key
+ * never depends on whatever text is sitting in the ignored input. OpenAI-family
+ * providers use the real model name so switching models still invalidates.
+ */
+export function cacheModel(s: InterlinearSettings): string {
+  return s.providerKind === "baidu" ? BAIDU_CACHE_MODEL : s.model;
+}
+
 /** Project the provider-relevant subset for the translation backend. */
 export function toProviderConfig(s: InterlinearSettings): ProviderConfig {
   return {
@@ -236,9 +330,15 @@ export function toProviderConfig(s: InterlinearSettings): ProviderConfig {
   };
 }
 
-/** A translation can only run once an API key has been supplied (BYOK). */
+/**
+ * A translation can only run once BYOK credentials have been supplied. Baidu
+ * additionally requires an APP ID (which we store in `baseUrl`), so both
+ * fields must be non-empty for that kind.
+ */
 export function isConfigured(s: InterlinearSettings): boolean {
-  return s.apiKey.trim().length > 0;
+  if (s.apiKey.trim().length === 0) return false;
+  if (s.providerKind === "baidu" && s.baseUrl.trim().length === 0) return false;
+  return true;
 }
 
 /**
@@ -247,8 +347,10 @@ export function isConfigured(s: InterlinearSettings): boolean {
  * may differ, so the controller drops its per-note "failed/skip" set when this
  * changes — whether edited in settings or synced in externally. Rate/batch knobs
  * (concurrency, retries, …) are intentionally excluded: they tune delivery, not
- * the request's success criteria or result identity.
+ * the request's success criteria or result identity. Includes providerKind
+ * because switching backend semantics changes everything even if the surface
+ * fields happen to match.
  */
 export function providerConfigSignature(s: InterlinearSettings): string {
-  return JSON.stringify(toProviderConfig(s));
+  return JSON.stringify({ kind: s.providerKind, ...toProviderConfig(s) });
 }

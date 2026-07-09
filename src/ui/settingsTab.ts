@@ -3,13 +3,12 @@ import type InterlinearPlugin from "../main";
 import {
   applyProviderPreset,
   matchPreset,
-  toProviderConfig,
   isConfigured,
   PROVIDER_PRESETS,
   TRANSLATION_STYLES,
 } from "../settings";
 import type { DisplayMode, FabVisibility, TranslationStyle } from "../settings";
-import { DeepSeekProvider } from "../translator/deepseek";
+import { createProvider } from "../translator/factory";
 import { AuthError, RateLimitError } from "../translator/provider";
 import { obsidianRequestUrlClient } from "../translator/requestUrlClient";
 
@@ -72,13 +71,15 @@ export class InterlinearSettingTab extends PluginSettingTab {
   private renderServiceSection(containerEl: HTMLElement): void {
     new Setting(containerEl).setName("Translation service").setHeading();
 
-    const matched = matchPreset(this.plugin.settings.baseUrl);
+    const settings = this.plugin.settings;
+    const matched = matchPreset(settings);
     const showCustomProvider = this.customProviderMode || matched === null;
+    const isBaidu = settings.providerKind === "baidu";
 
     new Setting(containerEl)
       .setName("Service preset")
       .setDesc(
-        "Pre-fills the endpoint, model, and recommended rate/batch tuning for common OpenAI-compatible services (overwrites the Advanced values below). Any /chat/completions endpoint works via Custom, which leaves Advanced untouched."
+        "Pre-fills the endpoint, model, and recommended rate/batch tuning for common services (overwrites the Advanced values below). Custom leaves Advanced untouched and speaks the OpenAI-compatible /chat/completions protocol."
       )
       .addDropdown((dropdown) => {
         for (const p of PROVIDER_PRESETS) dropdown.addOption(p.id, p.label);
@@ -87,6 +88,11 @@ export class InterlinearSettingTab extends PluginSettingTab {
         dropdown.onChange(async (value) => {
           if (value === CUSTOM_PROVIDER) {
             this.customProviderMode = true;
+            // Custom means "any OpenAI-compatible endpoint" — flip kind back to
+            // openai in case we're coming from the Baidu preset (whose baseUrl
+            // holds an APP ID, not a URL). Then let the user edit the fields.
+            this.plugin.settings.providerKind = "openai";
+            await this.plugin.saveSettings();
           } else {
             this.customProviderMode = false;
             const preset = PROVIDER_PRESETS.find((p) => p.id === value);
@@ -104,10 +110,14 @@ export class InterlinearSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("API key")
-      .setDesc("BYOK — stored only in the local data.json; never uploaded, logged, or committed.")
+      .setDesc(
+        isBaidu
+          ? "Baidu API secret (密钥). BYOK — stored only in the local data.json; never uploaded, logged, or committed."
+          : "BYOK — stored only in the local data.json; never uploaded, logged, or committed."
+      )
       .addText((text) => {
         text
-          .setPlaceholder("sk-...")
+          .setPlaceholder(isBaidu ? "Baidu secret key" : "sk-...")
           .setValue(this.plugin.settings.apiKey)
           .onChange(async (value) => {
             this.plugin.settings.apiKey = value.trim();
@@ -118,23 +128,42 @@ export class InterlinearSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Base URL")
-      .setDesc("Base address of the OpenAI-compatible endpoint.")
+      .setDesc(
+        isBaidu
+          ? "Baidu APP ID (appid). This field is repurposed for Baidu — the wire endpoint is fixed by the service."
+          : "Base address of the OpenAI-compatible endpoint."
+      )
       .addText((text) =>
         text
-          .setPlaceholder("https://api.deepseek.com")
+          .setPlaceholder(isBaidu ? "e.g. 2015063000000001" : "https://api.deepseek.com")
           .setValue(this.plugin.settings.baseUrl)
           .onChange(async (value) => {
-            this.plugin.settings.baseUrl = value.trim() || "https://api.deepseek.com";
+            const trimmed = value.trim();
+            // For Baidu, an empty baseUrl means "no APP ID yet" (isConfigured
+            // will gate translation). For OpenAI-compatible it falls back to
+            // the DeepSeek default so a blank field never breaks translation.
+            this.plugin.settings.baseUrl = isBaidu
+              ? trimmed
+              : trimmed || "https://api.deepseek.com";
             await this.plugin.saveSettings();
           })
       );
 
-    new Setting(containerEl).setName("Model").addText((text) =>
-      text.setValue(this.plugin.settings.model).onChange(async (value) => {
-        this.plugin.settings.model = value.trim() || "deepseek-v4-flash";
-        await this.plugin.saveSettings();
-      })
-    );
+    new Setting(containerEl)
+      .setName("Model")
+      .setDesc(
+        isBaidu
+          ? "Not used by Baidu (the API has no model field). Anything typed here is ignored."
+          : ""
+      )
+      .addText((text) => {
+        text.setValue(this.plugin.settings.model).onChange(async (value) => {
+          const trimmed = value.trim();
+          this.plugin.settings.model = isBaidu ? trimmed : trimmed || "deepseek-v4-flash";
+          await this.plugin.saveSettings();
+        });
+        text.inputEl.disabled = isBaidu;
+      });
 
     new Setting(containerEl)
       .setName("Test connection")
@@ -142,16 +171,17 @@ export class InterlinearSettingTab extends PluginSettingTab {
       .addButton((btn) => {
         btn.setButtonText("Test").onClick(async () => {
           if (!isConfigured(this.plugin.settings)) {
-            new Notice("Set an API key first (for local servers any non-empty value works).");
+            new Notice(
+              this.plugin.settings.providerKind === "baidu"
+                ? "Set an APP ID (Base URL) and secret (API key) first."
+                : "Set an API key first (for local servers any non-empty value works)."
+            );
             return;
           }
           btn.setDisabled(true);
           btn.setButtonText("Testing…");
           try {
-            const provider = new DeepSeekProvider({
-              config: toProviderConfig(this.plugin.settings),
-              http: obsidianRequestUrlClient,
-            });
+            const provider = createProvider(this.plugin.settings, obsidianRequestUrlClient);
             const [sample] = await provider.translate(["Hello!"]);
             new Notice(`Connection OK — sample translation: ${sample.slice(0, 60)}`);
           } catch (err) {

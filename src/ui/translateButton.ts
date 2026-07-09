@@ -33,10 +33,10 @@ import {
 import { isLikelyTargetLanguage } from "../core/blockRules";
 import { chunkByBudget, Segment } from "../core/segmentation";
 import { runPool } from "../core/rateLimiter";
-import { DeepSeekProvider } from "../translator/deepseek";
+import { createProvider } from "../translator/factory";
 import { HttpClient, AuthError } from "../translator/provider";
 import { TranslationCache } from "../translator/cache";
-import { DisplayMode, InterlinearSettings, isConfigured, toProviderConfig } from "../settings";
+import { cacheModel, DisplayMode, InterlinearSettings, isConfigured } from "../settings";
 
 const REVEAL_OFF_CLASS = "it-reveal-off"; // on container: hide translations, show originals
 const SYNC_DEBOUNCE_MS = 120;
@@ -268,7 +268,11 @@ export class TranslationController {
 
   private ensureConfigured(): boolean {
     if (isConfigured(this.getSettings())) return true;
-    new Notice("Set your DeepSeek API key in Interlinear settings first.");
+    new Notice(
+      this.getSettings().providerKind === "baidu"
+        ? "Set your Baidu APP ID (Base URL) and secret (API key) in Interlinear settings first."
+        : "Set your API key in Interlinear settings first."
+    );
     return false;
   }
 
@@ -364,7 +368,8 @@ export class TranslationController {
       return;
     }
 
-    const { model, targetLang } = settings;
+    const { targetLang } = settings;
+    const model = cacheModel(settings);
     // Skip blocks already written in the target language (no request needed).
     const translatable = texts.filter((t) => !isLikelyTargetLanguage(t, targetLang));
     if (translatable.length === 0) {
@@ -381,7 +386,7 @@ export class TranslationController {
     try {
       const segments: Segment[] = misses.map((text, index) => ({ index, text }));
       const chunks = chunkByBudget(segments, settings.batchCharBudget, settings.maxSegmentsPerBatch);
-      const provider = new DeepSeekProvider({ config: toProviderConfig(settings), http: this.http });
+      const provider = createProvider(settings, this.http);
       this.addProgressTotal(active.path, chunks.length);
 
       const tasks = chunks.map((chunk) => async () => {
@@ -425,7 +430,8 @@ export class TranslationController {
     settings: InterlinearSettings,
     st: FileState
   ): Promise<void> {
-    const { model, targetLang } = settings;
+    const { targetLang } = settings;
+    const model = cacheModel(settings);
     const ctx: InjectContext = { app: this.app, sourcePath: path, component: this.component };
 
     const misses: Array<{ el: HTMLElement; text: string }> = [];
@@ -445,7 +451,7 @@ export class TranslationController {
 
     const segments: Segment[] = misses.map((m, k) => ({ index: k, text: m.text }));
     const chunks = chunkByBudget(segments, settings.batchCharBudget, settings.maxSegmentsPerBatch);
-    const provider = new DeepSeekProvider({ config: toProviderConfig(settings), http: this.http });
+    const provider = createProvider(settings, this.http);
     this.addProgressTotal(path, chunks.length);
 
     // Each task injects its blocks (and clears their spinners) as it completes.
