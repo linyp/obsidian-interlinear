@@ -38,6 +38,55 @@ export type HttpClient = (req: HttpRequestSpec) => Promise<HttpResponseLike>;
 export interface TranslationProvider {
   /** Translate N source segments, returning N translations in the same order. */
   translate(segments: string[]): Promise<string[]>;
+  /**
+   * Hard per-request caps for services with strict batch limits. The
+   * controller clamps its chunking to these BEFORE calling translate(), so a
+   * provider never has to loop internally (which would bypass the rate
+   * limiter's request spacing). Absent = unbounded (LLM batching applies).
+   */
+  readonly maxSegmentsPerRequest?: number;
+  readonly maxCharsPerRequest?: number;
+}
+
+// --- shared HTTP helpers (used by every provider's pure parser) -------------
+
+/** Case-insensitive header lookup (requestUrl header casing is not guaranteed). */
+export function headerValue(
+  headers: Record<string, string> | undefined,
+  name: string
+): string | undefined {
+  if (!headers) return undefined;
+  const lower = name.toLowerCase();
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === lower) return headers[key];
+  }
+  return undefined;
+}
+
+/** Parse a `Retry-After` (delta-seconds) header into milliseconds, if present. */
+export function retryAfterMs(headers: Record<string, string> | undefined): number | undefined {
+  const raw = headerValue(headers, "Retry-After");
+  if (raw === undefined) return undefined;
+  const seconds = Number(raw);
+  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : undefined;
+}
+
+/** JSON body of a response (`res.json` if the transport pre-parsed it, else
+ *  `res.text`), or a typed error if the body isn't valid JSON. */
+export function parseJsonBody(res: HttpResponseLike): unknown {
+  if (res.json !== undefined && res.json !== null) return res.json;
+  try {
+    return JSON.parse(res.text);
+  } catch {
+    throw new MalformedResponseError("Response body is not valid JSON.");
+  }
+}
+
+/** application/x-www-form-urlencoded encoding for form-POST services. */
+export function formEncode(params: Record<string, string>): string {
+  return Object.entries(params)
+    .map(([k, v]) => `${encodeURIComponent(k)}=${encodeURIComponent(v)}`)
+    .join("&");
 }
 
 export class TranslationError extends Error {

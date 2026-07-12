@@ -3,7 +3,7 @@
   "name": "Interlinear",
   "version": "0.2.4",
   "minAppVersion": "1.4.0",
-  "description": "Translate notes paragraph by paragraph in reading view — bilingual or translation-only alongside the original, without ever modifying your files. BYOK (DeepSeek or any OpenAI-compatible endpoint).",
+  "description": "Translate notes paragraph by paragraph in reading view — bilingual or translation-only alongside the original, without ever modifying your files. BYOK (DeepSeek or any OpenAI-compatible endpoint, plus traditional machine-translation services).",
   "author": "Yupeng Lin",
   "authorUrl": "https://github.com/linyp",
   "isDesktopOnly": false

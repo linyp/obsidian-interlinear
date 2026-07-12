@@ -33,10 +33,10 @@ import {
 import { isLikelyTargetLanguage } from "../core/blockRules";
 import { chunkByBudget, Segment } from "../core/segmentation";
 import { runPool } from "../core/rateLimiter";
-import { DeepSeekProvider } from "../translator/deepseek";
-import { HttpClient, AuthError } from "../translator/provider";
+import { createProvider } from "../translator/factory";
+import { HttpClient, AuthError, TranslationProvider } from "../translator/provider";
 import { TranslationCache } from "../translator/cache";
-import { DisplayMode, InterlinearSettings, isConfigured, toProviderConfig } from "../settings";
+import { DisplayMode, InterlinearSettings, isConfigured, cacheIdentity } from "../settings";
 
 const REVEAL_OFF_CLASS = "it-reveal-off"; // on container: hide translations, show originals
 const SYNC_DEBOUNCE_MS = 120;
@@ -268,8 +268,17 @@ export class TranslationController {
 
   private ensureConfigured(): boolean {
     if (isConfigured(this.getSettings())) return true;
-    new Notice("Set your DeepSeek API key in Interlinear settings first.");
+    new Notice("Configure the selected translation service in Interlinear settings first.");
     return false;
+  }
+
+  /** Chunk segments within BOTH the user's batch tuning and the provider's
+   *  hard per-request caps (traditional MT services take fewer/smaller
+   *  batches than the LLM path — some exactly one segment per request). */
+  private chunkForProvider(segments: Segment[], settings: InterlinearSettings, provider: TranslationProvider): Segment[][] {
+    const maxChars = Math.min(settings.batchCharBudget, provider.maxCharsPerRequest ?? Infinity);
+    const maxSegments = Math.min(settings.maxSegmentsPerBatch, provider.maxSegmentsPerRequest ?? Infinity);
+    return chunkByBudget(segments, maxChars, maxSegments);
   }
 
   /** Apply reveal (translation vs original) + display mode + style via container classes. */
@@ -364,14 +373,15 @@ export class TranslationController {
       return;
     }
 
-    const { model, targetLang } = settings;
+    const cacheId = cacheIdentity(settings);
+    const { targetLang } = settings;
     // Skip blocks already written in the target language (no request needed).
     const translatable = texts.filter((t) => !isLikelyTargetLanguage(t, targetLang));
     if (translatable.length === 0) {
       new Notice("Already in the target language — nothing to translate.");
       return;
     }
-    const misses = translatable.filter((t) => this.cache.get(t, model, targetLang) === undefined);
+    const misses = translatable.filter((t) => this.cache.get(t, cacheId, targetLang) === undefined);
     if (misses.length === 0) {
       await this.syncVisible(active, this.stateFor(active.path));
       return;
@@ -380,8 +390,8 @@ export class TranslationController {
     this.busyStart(active.path);
     try {
       const segments: Segment[] = misses.map((text, index) => ({ index, text }));
-      const chunks = chunkByBudget(segments, settings.batchCharBudget, settings.maxSegmentsPerBatch);
-      const provider = new DeepSeekProvider({ config: toProviderConfig(settings), http: this.http });
+      const provider = createProvider(settings, this.http);
+      const chunks = this.chunkForProvider(segments, settings, provider);
       this.addProgressTotal(active.path, chunks.length);
 
       const tasks = chunks.map((chunk) => async () => {
@@ -398,19 +408,25 @@ export class TranslationController {
 
       let authFailed = false;
       let failed = 0;
+      let firstError: unknown;
       for (const result of results) {
         if (!result.ok) {
           failed++;
+          firstError ??= result.error;
           if (result.error instanceof AuthError) authFailed = true;
+          console.warn("Interlinear: whole-note batch failed:", result.error);
           continue;
         }
         for (const { text, translated } of result.value) {
-          this.cache.set(text, model, targetLang, translated);
+          this.cache.set(text, cacheId, targetLang, translated);
         }
       }
 
       if (authFailed) new Notice("Authentication failed — check your API key.");
-      else if (failed > 0) new Notice(`Whole-note translation: ${failed} batch(es) failed — trigger again to retry.`);
+      else if (failed > 0)
+        new Notice(
+          `Whole-note translation: ${failed} batch(es) failed (${errorMessage(firstError)}) — trigger again to retry.`
+        );
     } finally {
       this.busyEnd(active.path);
     }
@@ -425,13 +441,14 @@ export class TranslationController {
     settings: InterlinearSettings,
     st: FileState
   ): Promise<void> {
-    const { model, targetLang } = settings;
+    const cacheId = cacheIdentity(settings);
+    const { targetLang } = settings;
     const ctx: InjectContext = { app: this.app, sourcePath: path, component: this.component };
 
     const misses: Array<{ el: HTMLElement; text: string }> = [];
     for (const block of blocks) {
       const text = block.descriptor.text;
-      const cached = this.cache.get(text, model, targetLang);
+      const cached = this.cache.get(text, cacheId, targetLang);
       if (cached !== undefined) {
         await injectTranslation(block.el, cached, ctx);
       } else {
@@ -444,8 +461,8 @@ export class TranslationController {
     for (const miss of misses) setBlockLoading(miss.el, true);
 
     const segments: Segment[] = misses.map((m, k) => ({ index: k, text: m.text }));
-    const chunks = chunkByBudget(segments, settings.batchCharBudget, settings.maxSegmentsPerBatch);
-    const provider = new DeepSeekProvider({ config: toProviderConfig(settings), http: this.http });
+    const provider = createProvider(settings, this.http);
+    const chunks = this.chunkForProvider(segments, settings, provider);
     this.addProgressTotal(path, chunks.length);
 
     // Each task injects its blocks (and clears their spinners) as it completes.
@@ -454,7 +471,7 @@ export class TranslationController {
       this.bumpProgressDone(path);
       for (let j = 0; j < chunk.length; j++) {
         const miss = misses[chunk[j].index];
-        this.cache.set(miss.text, model, targetLang, translations[j]);
+        this.cache.set(miss.text, cacheId, targetLang, translations[j]);
         await injectTranslation(miss.el, translations[j], ctx);
         setBlockLoading(miss.el, false);
       }
@@ -469,11 +486,14 @@ export class TranslationController {
     const failedSet = this.failedTextsFor(path);
     let authFailed = false;
     let failed = 0;
+    let firstError: unknown;
     for (let i = 0; i < results.length; i++) {
       const result = results[i];
       if (!result.ok) {
         failed++;
+        firstError ??= result.error;
         if (result.error instanceof AuthError) authFailed = true;
+        console.warn("Interlinear: batch failed:", result.error);
         for (const s of chunks[i]) {
           setBlockLoading(misses[s.index].el, false);
           failedSet.add(s.text);
@@ -483,7 +503,8 @@ export class TranslationController {
 
     if (container) applyDisplayMode(container, st.mode);
     if (authFailed) new Notice("Authentication failed — check your API key.");
-    else if (failed > 0) new Notice(`${failed} batch(es) failed — trigger again to retry.`);
+    else if (failed > 0)
+      new Notice(`${failed} batch(es) failed (${errorMessage(firstError)}) — trigger again to retry.`);
   }
 
   // --- busy / progress accounting -------------------------------------------

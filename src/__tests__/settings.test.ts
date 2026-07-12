@@ -6,8 +6,11 @@ import {
   isConfigured,
   matchPreset,
   applyProviderPreset,
+  applyMtServicePreset,
+  cacheIdentity,
   providerConfigSignature,
   PROVIDER_PRESETS,
+  MT_SERVICE_PRESETS,
 } from "../settings";
 
 describe("normalizeSettings", () => {
@@ -237,5 +240,148 @@ describe("toProviderConfig / isConfigured", () => {
     expect(isConfigured(normalizeSettings({ apiKey: "" }))).toBe(false);
     expect(isConfigured(normalizeSettings({ apiKey: "   " }))).toBe(false);
     expect(isConfigured(normalizeSettings({ apiKey: "sk-1" }))).toBe(true);
+  });
+});
+
+describe("translation service (traditional MT additions)", () => {
+  it("defaults to the llm service and empty credentials (upgrade path)", () => {
+    // An old data.json (no service fields at all) lands on llm — existing
+    // users see zero behaviour change.
+    const s = normalizeSettings({ apiKey: "sk-old", baseUrl: "https://api.deepseek.com" });
+    expect(s.service).toBe("llm");
+    expect(s.baidu).toEqual({ appId: "", appSecret: "" });
+    expect(s.youdao).toEqual({ appKey: "", appSecret: "" });
+  });
+
+  it("falls back to llm on an unknown service value", () => {
+    expect(normalizeSettings({ service: "bing" as never }).service).toBe("llm");
+    expect(normalizeSettings({ service: 42 as never }).service).toBe("llm");
+  });
+
+  it("normalizes partial/garbage credential sub-objects to empty strings", () => {
+    const s = normalizeSettings({
+      baidu: { appId: 42 } as never,
+      youdao: { appKey: "y-key", extra: true } as never,
+    });
+    expect(s.baidu).toEqual({ appId: "", appSecret: "" });
+    expect(s.youdao).toEqual({ appKey: "y-key", appSecret: "" });
+    expect(normalizeSettings({ baidu: null as never }).baidu).toEqual({ appId: "", appSecret: "" });
+  });
+
+  it("isConfigured checks the ACTIVE service's credentials", () => {
+    expect(isConfigured(normalizeSettings({ service: "baidu", apiKey: "sk-llm-only" }))).toBe(false);
+    expect(
+      isConfigured(normalizeSettings({ service: "baidu", baidu: { appId: "1", appSecret: "" } }))
+    ).toBe(false);
+    expect(
+      isConfigured(normalizeSettings({ service: "baidu", baidu: { appId: "1", appSecret: "s" } }))
+    ).toBe(true);
+    expect(
+      isConfigured(normalizeSettings({ service: "youdao", youdao: { appKey: "k", appSecret: " " } }))
+    ).toBe(false);
+    expect(
+      isConfigured(normalizeSettings({ service: "youdao", youdao: { appKey: "k", appSecret: "s" } }))
+    ).toBe(true);
+  });
+
+  it("cacheIdentity keeps the bare model for llm and prefixes MT services", () => {
+    expect(cacheIdentity(normalizeSettings({ model: "deepseek-v4-flash" }))).toBe("deepseek-v4-flash");
+    expect(cacheIdentity(normalizeSettings({ service: "youdao" }))).toBe("mt:youdao");
+    expect(cacheIdentity(normalizeSettings({ service: "baidu" }))).toBe("mt:baidu");
+    // A model literally named like a service can never collide with it.
+    expect(cacheIdentity(normalizeSettings({ model: "baidu" }))).not.toBe(
+      cacheIdentity(normalizeSettings({ service: "baidu" }))
+    );
+  });
+
+  it("MT preset ids are unique, don't collide with LLM preset ids, and tuning is in range", () => {
+    const ids = MT_SERVICE_PRESETS.map((p) => p.id);
+    expect(new Set(ids).size).toBe(ids.length);
+    for (const p of MT_SERVICE_PRESETS) {
+      expect(PROVIDER_PRESETS.some((llm) => llm.id === p.id)).toBe(false);
+      expect(p.advanced.concurrency).toBeGreaterThanOrEqual(1);
+      expect(p.advanced.concurrency).toBeLessThanOrEqual(16);
+      expect(p.advanced.minIntervalMs).toBeGreaterThanOrEqual(0);
+      expect(p.advanced.batchCharBudget).toBeGreaterThanOrEqual(200);
+      expect(p.advanced.maxSegmentsPerBatch).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it("Youdao's preset stays strictly serial (low console-assigned QPS quotas)", () => {
+    const p = MT_SERVICE_PRESETS.find((x) => x.id === "youdao")!;
+    expect(p.advanced.concurrency).toBe(1);
+    expect(p.advanced.minIntervalMs).toBeGreaterThanOrEqual(1000);
+    expect(p.advanced.maxSegmentsPerBatch).toBe(1);
+  });
+
+  it("Baidu's preset stays under the verified plan's 10 QPS, one text per request", () => {
+    const p = MT_SERVICE_PRESETS.find((x) => x.id === "baidu")!;
+    // minIntervalMs is a GLOBAL start spacing in runPool, so ≥100 ms means
+    // at most 10 request starts/second regardless of concurrency.
+    expect(p.advanced.minIntervalMs).toBeGreaterThanOrEqual(100);
+    expect(p.advanced.maxSegmentsPerBatch).toBe(1);
+  });
+
+  it("applyMtServicePreset switches service + tuning but keeps LLM fields and other creds", () => {
+    const base = normalizeSettings({
+      apiKey: "sk-keep",
+      baseUrl: "https://my-proxy.example.com/v1",
+      model: "my-model",
+      customInstructions: "glossary",
+      youdao: { appKey: "y-keep", appSecret: "s-keep" },
+    });
+    const baidu = MT_SERVICE_PRESETS.find((p) => p.id === "baidu")!;
+    const s = applyMtServicePreset(base, baidu);
+    expect(s.service).toBe("baidu");
+    expect(s.concurrency).toBe(2);
+    expect(s.minIntervalMs).toBe(150);
+    expect(s.maxSegmentsPerBatch).toBe(1);
+    // Nothing else lost:
+    expect(s.apiKey).toBe("sk-keep");
+    expect(s.baseUrl).toBe("https://my-proxy.example.com/v1");
+    expect(s.model).toBe("my-model");
+    expect(s.customInstructions).toBe("glossary");
+    expect(s.youdao).toEqual({ appKey: "y-keep", appSecret: "s-keep" });
+  });
+
+  it("applyProviderPreset switches back to the llm service", () => {
+    const onBaidu = applyMtServicePreset(
+      normalizeSettings({}),
+      MT_SERVICE_PRESETS.find((p) => p.id === "baidu")!
+    );
+    const openai = PROVIDER_PRESETS.find((p) => p.id === "openai")!;
+    const s = applyProviderPreset(onBaidu, openai);
+    expect(s.service).toBe("llm");
+    expect(s.baseUrl).toBe(openai.baseUrl);
+  });
+
+  it("signature changes on service switch and active-credential edits only", () => {
+    const llm = normalizeSettings({ apiKey: "k" });
+    const onYoudao = normalizeSettings({
+      ...llm,
+      service: "youdao",
+      youdao: { appKey: "y1", appSecret: "s1" },
+    });
+    expect(providerConfigSignature(onYoudao)).not.toBe(providerConfigSignature(llm));
+    // Active credential change -> new signature.
+    expect(
+      providerConfigSignature(
+        normalizeSettings({ ...onYoudao, youdao: { appKey: "y1", appSecret: "s2" } })
+      )
+    ).not.toBe(providerConfigSignature(onYoudao));
+    // Target language affects every service's signature.
+    expect(
+      providerConfigSignature(normalizeSettings({ ...onYoudao, targetLang: "ja" }))
+    ).not.toBe(providerConfigSignature(onYoudao));
+    // INACTIVE credential edits (llm key, baidu creds while youdao is active)
+    // must NOT invalidate the failed-set.
+    expect(
+      providerConfigSignature(normalizeSettings({ ...onYoudao, apiKey: "k2" }))
+    ).toBe(providerConfigSignature(onYoudao));
+    expect(
+      providerConfigSignature(
+        normalizeSettings({ ...onYoudao, baidu: { appId: "1", appSecret: "s" } })
+      )
+    ).toBe(providerConfigSignature(onYoudao));
   });
 });

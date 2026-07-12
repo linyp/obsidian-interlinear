@@ -17,6 +17,7 @@ import {
   RateLimitError,
   MalformedResponseError,
   SegmentCountMismatchError,
+  retryAfterMs,
 } from "./provider";
 import { packBatch, unpackBatch } from "../core/segmentation";
 
@@ -70,24 +71,6 @@ export function buildChatRequest(segments: string[], cfg: ProviderConfig): HttpR
     },
     body: JSON.stringify(body),
   };
-}
-
-/** Case-insensitive header lookup (requestUrl header casing is not guaranteed). */
-function headerValue(headers: Record<string, string> | undefined, name: string): string | undefined {
-  if (!headers) return undefined;
-  const lower = name.toLowerCase();
-  for (const key of Object.keys(headers)) {
-    if (key.toLowerCase() === lower) return headers[key];
-  }
-  return undefined;
-}
-
-/** Parse a `Retry-After` (delta-seconds) header into milliseconds, if present. */
-function retryAfterMs(headers: Record<string, string> | undefined): number | undefined {
-  const raw = headerValue(headers, "Retry-After");
-  if (raw === undefined) return undefined;
-  const seconds = Number(raw);
-  return Number.isFinite(seconds) && seconds >= 0 ? seconds * 1000 : undefined;
 }
 
 function extractContent(payload: unknown): string | undefined {

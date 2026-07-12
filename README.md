@@ -47,18 +47,24 @@ by paragraph, as bilingual or translation-only.
   bare URLs, pure symbol/number blocks, and blocks **already written in the target
   language** (no request is sent for those).
 - **Pluggable backend** behind a `TranslationProvider` interface, with **service
-  presets** (DeepSeek by default; OpenAI, SiliconFlow, Ollama, or any custom
-  OpenAI-compatible endpoint) and a **Test connection** button in settings.
+  presets** across two families and a **Test connection** button in settings:
+  - **LLM** (default): DeepSeek, OpenAI, SiliconFlow, Ollama, or any custom
+    OpenAI-compatible endpoint;
+  - **Traditional machine translation**: Baidu Translate (百度翻译) and
+    Youdao (有道智云) — cheaper/faster APIs with generous free tiers; each
+    keeps its own credentials, so switching services never loses keys.
   Requests use Obsidian's `requestUrl` (not `fetch`).
 
 ## Network use, accounts & privacy
 
 - **Remote service.** When — and only when — you trigger a translation or click
   **Test connection**, the plugin sends the translatable paragraph text of the
-  active note to the **endpoint you configured** (default
-  `https://api.deepseek.com`). Nothing is sent at any other time.
-- **Account required.** Bring your own API key (BYOK) for the configured service;
-  usage is billed by that provider, not by this plugin.
+  active note to the **official endpoint of the service you selected** (default
+  `https://api.deepseek.com`; for traditional MT services, that service's fixed
+  API endpoint). Nothing is sent at any other time, and never to more than one
+  service.
+- **Account required.** Bring your own API key / app credentials (BYOK) for the
+  selected service; usage is billed by that provider, not by this plugin.
 - **No telemetry.** The plugin collects nothing and phones home nowhere.
 - **Local files only.** Settings (including your API key) live in the plugin's
   `data.json`; the translation cache lives in `cache.json` next to it (content
@@ -98,11 +104,12 @@ Open **Settings → Interlinear**:
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| Service preset | DeepSeek | Pre-fills base URL, model, and recommended rate/batch tuning (overwrites Advanced): DeepSeek / OpenAI / SiliconFlow / Ollama / custom. Custom leaves Advanced untouched. |
-| API key | _(empty)_ | Required (BYOK). Stored only in `data.json`. |
-| Base URL | `https://api.deepseek.com` | Any OpenAI-compatible endpoint. |
-| Model | `deepseek-v4-flash` | |
-| Test connection | — | Sends one tiny request to verify the key and endpoint. |
+| Service | DeepSeek | One dropdown, two families. **LLM**: DeepSeek / OpenAI / SiliconFlow / Ollama / custom OpenAI-compatible — pre-fills base URL, model, and recommended rate/batch tuning (overwrites Advanced; Custom leaves it untouched). **Traditional MT**: Baidu Translate (百度翻译) / Youdao (有道智云) — only credentials needed; recommended tuning is applied on switch. Every service's credentials persist, so switching never loses keys. |
+| API key _(LLM only)_ | _(empty)_ | Required (BYOK). Stored only in `data.json`. |
+| App ID + secret _(Baidu / Youdao)_ | _(empty)_ | The app credential pair from that service's developer console (BYOK, same storage rules). |
+| Base URL _(LLM only)_ | `https://api.deepseek.com` | Any OpenAI-compatible endpoint. |
+| Model _(LLM only)_ | `deepseek-v4-flash` | |
+| Test connection | — | Sends one tiny request to verify the credentials and endpoint. |
 | Target language | `zh-CN` | e.g. `zh-CN`, `en`, `ja`. |
 | Default display mode | Bilingual | |
 | Translation style | Border | Border / quote / muted / dashed underline / learning mask. |
@@ -111,15 +118,31 @@ Open **Settings → Interlinear**:
 | Min interval (ms) | 0 | Spacing between request starts. |
 | Max retries | 3 | On 429 / transient errors. |
 | Batch char budget | 4000 | Characters packed per request. |
-| Max segments per request | 12 | Blocks packed per request, alongside the char budget (1–100). |
-| Custom instructions | _(empty)_ | Optional text appended to the system prompt — glossary, tone, or domain. |
+| Max segments per request | 12 | Blocks packed per request, alongside the char budget (1–100). Traditional MT services additionally enforce their own hard per-request caps. |
+| Custom instructions _(LLM only)_ | _(empty)_ | Optional text appended to the system prompt — glossary, tone, or domain. |
 | Persistent cache | On | Keep translations across restarts; shows size and offers one-click clear. |
 
 > DeepSeek's flash tier rate-limits by **concurrent connections**, not by RPM/TPM,
 > so the defaults run several requests in parallel with no spacing. Selecting
 > another preset applies a more conservative tuning (lower concurrency + request
 > spacing for RPM/TPM-limited services like OpenAI/SiliconFlow; small batches for
-> a local Ollama model). Tune further to your account tier as needed.
+> a local Ollama model). Baidu's basic text translation is free once you complete
+> personal verification (个人认证): the Advanced plan allows 10 requests/second
+> with 1M free characters/month, and the preset paces requests to stay under that
+> (~150 ms spacing, one paragraph per request). On an unverified Baidu account
+> (~1 request/second) raise **Min interval** to ~1100 ms. Youdao's docs publish
+> no QPS number, but its console assigns each app a QPS quota that is low in
+> practice, so the Youdao preset runs strictly serial with ≥1.1 s spacing —
+> lower **Min interval** only if your app's quota allows it (411/412 errors
+> mean it doesn't).
+>
+> Traditional MT services also enforce hard per-request caps on top of your batch
+> settings (the smaller value wins): Baidu 1 text / ~1 800 chars; Youdao
+> 1 text / ~4 500 chars. **Concurrency /
+> Min interval / Max retries** apply to every service; **Custom instructions** is
+> LLM-only (traditional MT has no prompt) and is hidden for those services. A
+> single paragraph larger than a service's per-request limit fails server-side and
+> is surfaced as a failed batch (click again to retry).
 
 ## Use
 
@@ -190,9 +213,12 @@ src/
   core/         pure logic (no obsidian): hash, segmentation + batch pack/unpack,
                 block skip-rules + same-language detection, rate limiter
                 (concurrency/backoff)
-  translator/   provider.ts (interface + typed errors), deepseek.ts (pure request
-                builder / response parser + DeepSeekProvider), cache.ts (LRU +
-                serialization for the persistent cache);
+  translator/   provider.ts (interface + typed errors + shared HTTP helpers),
+                one pure request-builder/response-parser module per backend
+                (deepseek.ts, baidu.ts, youdao.ts),
+                factory.ts (settings -> provider), langCodes.ts (per-service
+                target-language mapping), cache.ts (LRU + serialization for
+                the persistent cache);
                 requestUrlClient.ts is the only requestUrl adapter
   render/       postProcessor.ts — DOM adapter + collect/inject/clear/display-mode
                 + style helpers
@@ -208,9 +234,12 @@ src/
 `translator/requestUrlClient.ts`. The HTTP call sits behind an injectable
 `HttpClient` seam, so the provider is fully testable without the network.
 
-Batches are packed with numbered `<<<SEG k>>>` sentinels; if the model returns the
-wrong number of segments, the provider falls back to one request per segment so
-every translation still maps 1:1 to its source block.
+On the LLM path, batches are packed with numbered `<<<SEG k>>>` sentinels; if the
+model returns the wrong number of segments, the provider falls back to one request
+per segment so every translation still maps 1:1 to its source block. Traditional
+MT APIs are positional by design (an array in, an array out — or one text per
+request), so they skip the sentinel protocol entirely; each provider declares its
+hard per-request caps and the controller sizes batches to fit.
 
 ## Limitations (MVP)
 

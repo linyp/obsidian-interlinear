@@ -4,8 +4,22 @@
  * in ui/settingsTab.ts (a shell file) and writes back into this shape.
  */
 import { ProviderConfig } from "./translator/provider";
+import { MtServiceId } from "./translator/langCodes";
 
 export type DisplayMode = "bilingual" | "translation-only";
+
+/**
+ * The active translation backend: "llm" = the OpenAI-compatible chat path
+ * (DeepSeek and friends, selected further by baseUrl/model as before); the
+ * rest are traditional machine-translation APIs with their own credentials.
+ */
+export type TranslationService = "llm" | MtServiceId;
+
+const TRANSLATION_SERVICES: ReadonlyArray<TranslationService> = [
+  "llm",
+  "baidu",
+  "youdao",
+];
 
 /** Where the in-view floating button (FAB) is shown. */
 export type FabVisibility = "always" | "mobile" | "never";
@@ -111,17 +125,77 @@ export function applyProviderPreset(
 ): InterlinearSettings {
   return normalizeSettings({
     ...current,
+    service: "llm",
     baseUrl: preset.baseUrl,
     model: preset.model,
     ...preset.advanced,
   });
 }
 
+/**
+ * Traditional machine-translation service presets. Unlike the LLM presets
+ * there is no baseUrl/model to pre-fill — each service's endpoint is fixed in
+ * its provider — but the recommended rate/batch tuning matters even more:
+ * the common free tiers are hard-limited (some to ~1 request/second), so
+ * switching applies a full Advanced block, exactly like the LLM presets.
+ */
+export interface MtServicePreset {
+  id: MtServiceId;
+  label: string;
+  advanced: Required<ProviderPresetAdvanced>;
+}
+
+export const MT_SERVICE_PRESETS: ReadonlyArray<MtServicePreset> = [
+  {
+    id: "baidu",
+    label: "Baidu Translate (百度翻译)",
+    // The personally-verified (个人认证) Advanced plan is free at 10 QPS
+    // (1M chars/month), and the API is one-text-per-request (its newline
+    // batching breaks on segments containing newlines): one segment per
+    // request, ~150 ms start spacing keeps a safety margin under the quota.
+    // Unverified accounts are limited to ~1 QPS — raise Min interval to
+    // ~1100 ms (see the settings-tab hint).
+    advanced: { concurrency: 2, minIntervalMs: 150, maxRetries: 3, batchCharBudget: 1800, maxSegmentsPerBatch: 1 },
+  },
+  {
+    id: "youdao",
+    label: "Youdao (有道智云)",
+    // The docs publish no QPS number, but the console assigns each app a QPS
+    // quota that is low in practice (~3 QPS pacing produced 411 batch
+    // failures on a default app): strictly serial, ≥1.1 s spacing, one q per
+    // request. Users with a higher app quota can lower Min interval.
+    advanced: { concurrency: 1, minIntervalMs: 1100, maxRetries: 3, batchCharBudget: 4000, maxSegmentsPerBatch: 1 },
+  },
+];
+
+/**
+ * Settings produced by selecting an MT service: switches `service` and applies
+ * the service's recommended Advanced tuning. Deliberately does NOT touch the
+ * LLM fields (baseUrl/model/apiKey) or any other service's credentials, so
+ * switching back and forth never loses configuration.
+ */
+export function applyMtServicePreset(
+  current: InterlinearSettings,
+  preset: MtServicePreset
+): InterlinearSettings {
+  return normalizeSettings({
+    ...current,
+    service: preset.id,
+    ...preset.advanced,
+  });
+}
+
 export interface InterlinearSettings {
+  /** Active translation backend. All credentials below persist independently,
+   *  so switching services never loses previously entered keys. */
+  service: TranslationService;
   /** BYOK — stored only in local data.json; never logged, never committed. */
   apiKey: string;
   baseUrl: string;
   model: string;
+  /** Traditional MT credentials (BYOK, same storage rules as apiKey). */
+  baidu: { appId: string; appSecret: string };
+  youdao: { appKey: string; appSecret: string };
   defaultDisplayMode: DisplayMode;
   targetLang: string;
   /** Max concurrent translation requests. */
@@ -145,9 +219,12 @@ export interface InterlinearSettings {
 }
 
 export const DEFAULT_SETTINGS: InterlinearSettings = {
+  service: "llm",
   apiKey: "",
   baseUrl: "https://api.deepseek.com",
   model: "deepseek-v4-flash",
+  baidu: { appId: "", appSecret: "" },
+  youdao: { appKey: "", appSecret: "" },
   defaultDisplayMode: "bilingual",
   targetLang: "zh-CN",
   // DeepSeek rate-limits by concurrent connections (flash allows ~2500), NOT by
@@ -194,6 +271,15 @@ function clampInt(value: unknown, min: number, max: number, fallback: number): n
   return Math.min(max, Math.max(min, Math.round(n)));
 }
 
+/** String field of a possibly-partial/garbage nested object ("" otherwise). */
+function strField(obj: unknown, key: string): string {
+  if (obj && typeof obj === "object") {
+    const v = (obj as Record<string, unknown>)[key];
+    if (typeof v === "string") return v;
+  }
+  return "";
+}
+
 /**
  * Merge persisted data over defaults and clamp/validate every field, so a
  * corrupt or partial data.json can never produce an invalid runtime config.
@@ -202,9 +288,14 @@ export function normalizeSettings(raw: unknown): InterlinearSettings {
   const r = (raw && typeof raw === "object" ? raw : {}) as Partial<InterlinearSettings>;
   const merged = { ...DEFAULT_SETTINGS, ...r };
   return {
+    service: oneOf(merged.service, TRANSLATION_SERVICES, DEFAULT_SETTINGS.service),
     apiKey: typeof merged.apiKey === "string" ? merged.apiKey : "",
     baseUrl: nonEmptyOr(merged.baseUrl, DEFAULT_SETTINGS.baseUrl),
     model: nonEmptyOr(merged.model, DEFAULT_SETTINGS.model),
+    // The top-level spread is shallow — normalize each credential sub-object
+    // field-by-field so a partial/corrupt data.json can't leak bad shapes in.
+    baidu: { appId: strField(merged.baidu, "appId"), appSecret: strField(merged.baidu, "appSecret") },
+    youdao: { appKey: strField(merged.youdao, "appKey"), appSecret: strField(merged.youdao, "appSecret") },
     defaultDisplayMode:
       merged.defaultDisplayMode === "translation-only" ? "translation-only" : "bilingual",
     targetLang: nonEmptyOr(merged.targetLang, DEFAULT_SETTINGS.targetLang),
@@ -236,19 +327,50 @@ export function toProviderConfig(s: InterlinearSettings): ProviderConfig {
   };
 }
 
-/** A translation can only run once an API key has been supplied (BYOK). */
+/** A translation can only run once the ACTIVE service's credentials exist (BYOK). */
 export function isConfigured(s: InterlinearSettings): boolean {
-  return s.apiKey.trim().length > 0;
+  switch (s.service) {
+    case "baidu":
+      return s.baidu.appId.trim().length > 0 && s.baidu.appSecret.trim().length > 0;
+    case "youdao":
+      return s.youdao.appKey.trim().length > 0 && s.youdao.appSecret.trim().length > 0;
+    default:
+      return s.apiKey.trim().length > 0;
+  }
 }
 
 /**
- * Signature of the translation-affecting config (the provider fields). A change
- * means prior failures may now succeed and the cache identity (model/targetLang)
- * may differ, so the controller drops its per-note "failed/skip" set when this
- * changes — whether edited in settings or synced in externally. Rate/batch knobs
- * (concurrency, retries, …) are intentionally excluded: they tune delivery, not
- * the request's success criteria or result identity.
+ * Cache identity of the active backend — the "model" slot of the cache key.
+ * LLM keeps the bare model name (existing users' cache entries stay valid);
+ * MT services use a `mt:`-prefixed service id so they can never collide with
+ * a model literally named after a service.
+ */
+export function cacheIdentity(s: InterlinearSettings): string {
+  return s.service === "llm" ? s.model : `mt:${s.service}`;
+}
+
+/** The active service's translation-affecting config (credentials + language). */
+function activeServiceConfig(s: InterlinearSettings): unknown {
+  switch (s.service) {
+    case "baidu":
+      return { ...s.baidu, targetLang: s.targetLang };
+    case "youdao":
+      return { ...s.youdao, targetLang: s.targetLang };
+    default:
+      return toProviderConfig(s);
+  }
+}
+
+/**
+ * Signature of the translation-affecting config for the ACTIVE service. A
+ * change means prior failures may now succeed and the cache identity may
+ * differ, so the controller drops its per-note "failed/skip" set when this
+ * changes — whether edited in settings or synced in externally. Rate/batch
+ * knobs (concurrency, retries, …) are intentionally excluded: they tune
+ * delivery, not the request's success criteria or result identity. Editing an
+ * INACTIVE service's credentials doesn't change the signature either — those
+ * fields can't affect the next request.
  */
 export function providerConfigSignature(s: InterlinearSettings): string {
-  return JSON.stringify(toProviderConfig(s));
+  return JSON.stringify([s.service, activeServiceConfig(s)]);
 }
