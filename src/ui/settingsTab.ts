@@ -5,6 +5,7 @@ import {
   applyMtServicePreset,
   matchPreset,
   isConfigured,
+  isInsecureBaseUrl,
   PROVIDER_PRESETS,
   MT_SERVICE_PRESETS,
   TRANSLATION_STYLES,
@@ -194,6 +195,10 @@ export class InterlinearSettingTab extends PluginSettingTab {
       "sk-..."
     );
 
+    // Assigned right below; a `let` so the text-field onChange can call it
+    // without re-rendering the whole tab (which would steal input focus).
+    let refreshInsecureWarning = (): void => {};
+
     new Setting(containerEl)
       .setName("Base URL")
       .setDesc("Base address of the OpenAI-compatible endpoint.")
@@ -204,8 +209,21 @@ export class InterlinearSettingTab extends PluginSettingTab {
           .onChange(async (value) => {
             this.plugin.settings.baseUrl = value.trim() || "https://api.deepseek.com";
             await this.plugin.saveSettings();
+            refreshInsecureWarning();
           })
       );
+
+    // SECURITY: plain http to a remote host would send the Bearer API key
+    // unencrypted. Local http (Ollama etc.) is fine and stays silent.
+    const insecureWarningEl = containerEl.createDiv({ cls: "it-insecure-warning" });
+    refreshInsecureWarning = () => {
+      insecureWarningEl.setText(
+        isInsecureBaseUrl(this.plugin.settings.baseUrl)
+          ? "⚠ This endpoint uses plain http:// to a remote host — your API key would be sent unencrypted. Use https:// (http is fine only for local servers like Ollama)."
+          : ""
+      );
+    };
+    refreshInsecureWarning();
 
     new Setting(containerEl).setName("Model").addText((text) =>
       text.setValue(this.plugin.settings.model).onChange(async (value) => {

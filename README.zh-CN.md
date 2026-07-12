@@ -50,6 +50,10 @@
 - **零遥测。** 插件不收集任何信息，不向任何地方上报。
 - **仅本地文件。** 设置（含 API key）存于插件的 `data.json`；翻译缓存存于同目录的
   `cache.json`（只有内容 hash 和译文）。你的笔记永远不会被修改。
+- **同步注意。** `data.json` 位于 vault 内部，vault 同步（Obsidian Sync、iCloud、
+  Dropbox 等）会把你的 API key 带到所有同步端。若你用 git 管理 vault，请把
+  `.obsidian/plugins/interlinear/data.json` 加入该 vault 仓库的 `.gitignore`，
+  避免把 key 提交出去。
 
 ## 安装
 

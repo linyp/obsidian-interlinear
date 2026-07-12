@@ -69,6 +69,11 @@ by paragraph, as bilingual or translation-only.
 - **Local files only.** Settings (including your API key) live in the plugin's
   `data.json`; the translation cache lives in `cache.json` next to it (content
   hashes + translations only). Your notes are never modified.
+- **Syncing caveat.** `data.json` sits inside your vault, so vault sync
+  (Obsidian Sync, iCloud, Dropbox, …) carries your API key to every synced
+  device. If you keep your vault in a git repository, add
+  `.obsidian/plugins/interlinear/data.json` to that vault's `.gitignore` so
+  the key is never committed.
 
 ## Install
 

@@ -271,3 +271,14 @@
   pointer-events: none;
   opacity: 0;
 }
+
+/* Settings: plaintext-HTTP warning under the Base URL field (empty = hidden). */
+.it-insecure-warning {
+  color: var(--text-error);
+  font-size: var(--font-ui-small);
+  margin: 4px 0 12px;
+}
+
+.it-insecure-warning:empty {
+  display: none;
+}

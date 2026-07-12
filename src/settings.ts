@@ -327,6 +327,18 @@ export function toProviderConfig(s: InterlinearSettings): ProviderConfig {
   };
 }
 
+/**
+ * True when the base URL would send the API key over plaintext HTTP to a
+ * NON-local host. Local http is legitimate (Ollama et al.); remote http means
+ * the Bearer key crosses the network unencrypted, so the settings UI warns.
+ */
+export function isInsecureBaseUrl(baseUrl: string): boolean {
+  const m = /^http:\/\/(\[[^\]]*\]|[^/:?#]+)/i.exec(baseUrl.trim());
+  if (!m) return false; // https, empty, or unparsable — nothing to warn about
+  const host = m[1].toLowerCase();
+  return host !== "localhost" && host !== "127.0.0.1" && host !== "[::1]";
+}
+
 /** A translation can only run once the ACTIVE service's credentials exist (BYOK). */
 export function isConfigured(s: InterlinearSettings): boolean {
   switch (s.service) {

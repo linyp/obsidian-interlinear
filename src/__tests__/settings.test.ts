@@ -4,6 +4,7 @@ import {
   normalizeSettings,
   toProviderConfig,
   isConfigured,
+  isInsecureBaseUrl,
   matchPreset,
   applyProviderPreset,
   applyMtServicePreset,
@@ -240,6 +241,28 @@ describe("toProviderConfig / isConfigured", () => {
     expect(isConfigured(normalizeSettings({ apiKey: "" }))).toBe(false);
     expect(isConfigured(normalizeSettings({ apiKey: "   " }))).toBe(false);
     expect(isConfigured(normalizeSettings({ apiKey: "sk-1" }))).toBe(true);
+  });
+});
+
+describe("isInsecureBaseUrl", () => {
+  it("flags plain http to remote hosts (the key would travel unencrypted)", () => {
+    expect(isInsecureBaseUrl("http://api.example.com/v1")).toBe(true);
+    expect(isInsecureBaseUrl("HTTP://EXAMPLE.COM")).toBe(true);
+    expect(isInsecureBaseUrl("http://192.168.1.5:8080/v1")).toBe(true);
+  });
+
+  it("allows http to local hosts (Ollama and friends)", () => {
+    expect(isInsecureBaseUrl("http://localhost:11434/v1")).toBe(false);
+    expect(isInsecureBaseUrl("http://LOCALHOST:11434")).toBe(false);
+    expect(isInsecureBaseUrl("http://127.0.0.1:11434/v1")).toBe(false);
+    expect(isInsecureBaseUrl("http://[::1]:11434/v1")).toBe(false);
+  });
+
+  it("stays silent for https, empty, and unparsable values", () => {
+    expect(isInsecureBaseUrl("https://api.deepseek.com")).toBe(false);
+    expect(isInsecureBaseUrl("https://api.example.com/v1")).toBe(false);
+    expect(isInsecureBaseUrl("")).toBe(false);
+    expect(isInsecureBaseUrl("not a url")).toBe(false);
   });
 });
 
