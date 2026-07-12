@@ -12,5 +12,6 @@ data.json
 cache.json
 
 # Misc
+.codebase-memory/
 *.log
 .DS_Store
