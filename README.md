@@ -77,7 +77,11 @@ by paragraph, as bilingual or translation-only.
 1. Open **Settings → Community plugins → Browse**.
 2. Search for **Interlinear**, then select **Install** and **Enable**.
 
-Updates arrive automatically through Obsidian.
+Or open the [plugin's directory page](https://obsidian.md/plugins?id=interlinear)
+in a browser and click **Install**.
+
+Updates arrive through Obsidian's plugin update flow — **Settings → Community
+plugins → Check for updates**.
 
 ### Via BRAT (early / beta builds)
 
@@ -137,12 +141,12 @@ Open **Settings → Interlinear**:
 > mean it doesn't).
 >
 > Traditional MT services also enforce hard per-request caps on top of your batch
-> settings (the smaller value wins): Baidu 1 text / ~1 800 chars; Youdao
-> 1 text / ~4 500 chars. **Concurrency /
-> Min interval / Max retries** apply to every service; **Custom instructions** is
-> LLM-only (traditional MT has no prompt) and is hidden for those services. A
-> single paragraph larger than a service's per-request limit fails server-side and
-> is surfaced as a failed batch (click again to retry).
+> settings (the smaller value wins): Baidu 1 text / ~1 800 chars; Youdao 1 text /
+> ~4 500 chars. **Concurrency / Min interval / Max retries** apply to every
+> service; **Custom instructions** is LLM-only (traditional MT has no prompt) and
+> is hidden for those services. A single paragraph larger than a service's
+> per-request limit fails server-side and is surfaced as a failed batch — the
+> notice includes the reason, and triggering again retries.
 
 ## Use
 
@@ -212,7 +216,8 @@ and keeps the Obsidian/DOM/network surface thin.
 src/
   core/         pure logic (no obsidian): hash, segmentation + batch pack/unpack,
                 block skip-rules + same-language detection, rate limiter
-                (concurrency/backoff)
+                (concurrency/backoff), MD5/SHA-256 signing helpers
+                (Baidu/Youdao), list-markdown reassembly for translated lists
   translator/   provider.ts (interface + typed errors + shared HTTP helpers),
                 one pure request-builder/response-parser module per backend
                 (deepseek.ts, baidu.ts, youdao.ts),
@@ -237,9 +242,15 @@ src/
 On the LLM path, batches are packed with numbered `<<<SEG k>>>` sentinels; if the
 model returns the wrong number of segments, the provider falls back to one request
 per segment so every translation still maps 1:1 to its source block. Traditional
-MT APIs are positional by design (an array in, an array out — or one text per
-request), so they skip the sentinel protocol entirely; each provider declares its
-hard per-request caps and the controller sizes batches to fit.
+MT APIs take one text per request — inherently 1:1 — so they skip the sentinel
+protocol entirely; each provider declares its hard per-request caps and the
+controller sizes batches to fit.
+
+Want another backend? Adding one is deliberately small: a pure
+request-builder/response-parser module in `src/translator/` (see `baidu.ts` /
+`youdao.ts` for the pattern — no `obsidian` imports, HTTP injected so it's
+unit-testable), a case in `factory.ts`, a preset in `settings.ts`, and a
+credentials row in the settings tab. PRs welcome!
 
 ## Limitations (MVP)
 
