@@ -244,7 +244,9 @@ hard per-request caps and the controller sizes batches to fit.
 ## Limitations (MVP)
 
 - Reading view only — no editing/Live-Preview translation.
-- Lists and tables are translated as a single block (best-effort).
+- Lists and tables are translated as a single block (best-effort). A flat
+  list's translation is re-rendered as a list; nested structure is not
+  reconstructed.
 
 ## License
 

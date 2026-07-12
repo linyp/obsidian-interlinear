@@ -12,6 +12,7 @@
 import { MarkdownRenderer } from "obsidian";
 import type { App, Component } from "obsidian";
 import { BlockDescriptor, BlockKind, isTranslatable } from "../core/blockRules";
+import { listMarkdownFromLines } from "../core/listMarkdown";
 import type { DisplayMode, TranslationStyle } from "../settings";
 
 export const SOURCE_CLASS = "it-source";
@@ -121,6 +122,18 @@ export interface InjectContext {
 }
 
 /**
+ * A list block's translation comes back as marker-less lines (see
+ * core/listMarkdown). Put the list markers back when the lines map 1:1 onto
+ * the list's direct items, so the translation renders as a list again.
+ */
+function listAwareMarkdown(sourceEl: HTMLElement, translated: string): string {
+  const tag = sourceEl.tagName.toLowerCase();
+  if (tag !== "ul" && tag !== "ol") return translated;
+  const itemCount = sourceEl.querySelectorAll(":scope > li").length;
+  return listMarkdownFromLines(translated, tag === "ol", itemCount) ?? translated;
+}
+
+/**
  * Inject (or replace) a translation node as the sibling immediately after
  * `sourceEl`. Idempotent: re-running replaces the existing `.it-translation`
  * rather than stacking duplicates.
@@ -140,7 +153,8 @@ export async function injectTranslation(
     sourceEl.insertAdjacentElement("afterend", node);
   }
 
-  await MarkdownRenderer.render(ctx.app, translatedMarkdown, node, ctx.sourcePath, ctx.component);
+  const markdown = listAwareMarkdown(sourceEl, translatedMarkdown);
+  await MarkdownRenderer.render(ctx.app, markdown, node, ctx.sourcePath, ctx.component);
   return node;
 }
 
