@@ -1,16 +1,26 @@
-import { App, Notice, PluginSettingTab, Setting } from "obsidian";
+import { App, Component, Notice, PluginSettingTab, Setting } from "obsidian";
+import type { TextComponent } from "obsidian";
 import type InterlinearPlugin from "../main";
 import {
-  applyProviderPreset,
-  applyMtServicePreset,
-  matchPreset,
+  getActiveLlmSettings,
+  getActivePresetSettings,
   isConfigured,
   isInsecureBaseUrl,
+  isLlmPresetId,
+  isMtPresetId,
+  normalizeLlmEndpointFieldOnBlur,
   PROVIDER_PRESETS,
   MT_SERVICE_PRESETS,
+  selectPreset,
   TRANSLATION_STYLES,
 } from "../settings";
-import type { DisplayMode, FabVisibility, TranslationStyle } from "../settings";
+import type {
+  DisplayMode,
+  FabVisibility,
+  LlmEndpointField,
+  LlmPresetId,
+  TranslationStyle,
+} from "../settings";
 import { createProvider } from "../translator/factory";
 import { AuthError, RateLimitError } from "../translator/provider";
 import { obsidianRequestUrlClient } from "../translator/requestUrlClient";
@@ -37,7 +47,7 @@ const LANGUAGE_PRESETS: ReadonlyArray<{ value: string; label: string }> = [
   { value: "pt-BR", label: "Português (pt-BR)" },
 ];
 const CUSTOM_LANG = "__custom__";
-const CUSTOM_PROVIDER = "__custom__";
+const CUSTOM_PROVIDER = "custom";
 
 function testFailureMessage(err: unknown): string {
   if (err instanceof AuthError) {
@@ -51,10 +61,10 @@ function testFailureMessage(err: unknown): string {
 
 export class InterlinearSettingTab extends PluginSettingTab {
   private readonly plugin: InterlinearPlugin;
-  // True once the user picks "Custom" in a dropdown (so the editable fields show
-  // even while the stored value still happens to match a preset).
+  private controlEvents: Component | null = null;
+  // True once the user picks "Custom" in the language dropdown (so the editable
+  // field shows even while the stored value still happens to match a preset).
   private customLangMode = false;
-  private customProviderMode = false;
 
   constructor(app: App, plugin: InterlinearPlugin) {
     super(app, plugin);
@@ -62,11 +72,35 @@ export class InterlinearSettingTab extends PluginSettingTab {
   }
 
   display(): void {
+    this.resetControlEvents();
     const { containerEl } = this;
     containerEl.empty();
     this.renderServiceSection(containerEl);
     this.renderDisplaySection(containerEl);
     this.renderAdvancedSection(containerEl);
+  }
+
+  hide(): void {
+    this.disposeControlEvents();
+    super.hide();
+  }
+
+  /** Re-render an open settings page after data.json is replaced externally. */
+  refreshAfterExternalSettingsChange(): void {
+    if (!this.containerEl.isConnected) return;
+    this.customLangMode = false;
+    this.display();
+  }
+
+  private resetControlEvents(): void {
+    this.disposeControlEvents();
+    this.controlEvents = this.plugin.addChild(new Component());
+  }
+
+  private disposeControlEvents(): void {
+    if (!this.controlEvents) return;
+    this.plugin.removeChild(this.controlEvents);
+    this.controlEvents = null;
   }
 
   // --- Translation service ---------------------------------------------------
@@ -75,45 +109,21 @@ export class InterlinearSettingTab extends PluginSettingTab {
     new Setting(containerEl).setName("Translation service").setHeading();
 
     const settings = this.plugin.settings;
-    const isLlm = settings.service === "llm";
-    const matched = matchPreset(settings.baseUrl);
-    const showCustomProvider = isLlm && (this.customProviderMode || matched === null);
 
     new Setting(containerEl)
       .setName("Service")
       .setDesc(
-        "LLM presets pre-fill the endpoint, model, and recommended rate/batch tuning (any /chat/completions endpoint works via Custom, which leaves Advanced untouched). Traditional machine-translation services only need their credentials — their recommended tuning is applied on switch. Credentials of every service are kept, so switching never loses keys."
+        "Each preset keeps its own credentials and Advanced settings. The first selection creates a record with that preset's defaults; later selections restore the same record. Any /chat/completions endpoint works via Custom."
       )
       .addDropdown((dropdown) => {
         for (const p of PROVIDER_PRESETS) dropdown.addOption(p.id, p.label);
         dropdown.addOption(CUSTOM_PROVIDER, "Custom (OpenAI-compatible)…");
         for (const p of MT_SERVICE_PRESETS) dropdown.addOption(p.id, p.label);
-        dropdown.setValue(
-          !isLlm ? settings.service : showCustomProvider ? CUSTOM_PROVIDER : (matched?.id ?? CUSTOM_PROVIDER)
-        );
+        dropdown.setValue(settings.service);
         dropdown.onChange(async (value) => {
-          const mt = MT_SERVICE_PRESETS.find((p) => p.id === value);
-          if (mt) {
-            this.customProviderMode = false;
-            this.plugin.settings = applyMtServicePreset(this.plugin.settings, mt);
-            await this.plugin.saveSettings();
-          } else if (value === CUSTOM_PROVIDER) {
-            this.customProviderMode = true;
-            if (this.plugin.settings.service !== "llm") {
-              this.plugin.settings.service = "llm";
-              await this.plugin.saveSettings();
-            }
-          } else {
-            this.customProviderMode = false;
-            const preset = PROVIDER_PRESETS.find((p) => p.id === value);
-            if (preset) {
-              // Pre-fill endpoint/model AND the service's recommended Advanced
-              // tuning (overwrites current values — each service rate-limits
-              // differently); also switches back to the LLM path.
-              this.plugin.settings = applyProviderPreset(this.plugin.settings, preset);
-              await this.plugin.saveSettings();
-            }
-          }
+          if (!isLlmPresetId(value) && !isMtPresetId(value)) return;
+          this.plugin.settings = selectPreset(this.plugin.settings, value);
+          await this.plugin.saveSettings();
           this.display(); // re-render so the per-service fields reflect the selection
         });
       });
@@ -124,8 +134,8 @@ export class InterlinearSettingTab extends PluginSettingTab {
           .setName("App ID")
           .setDesc("From the service's developer console (通用翻译 API). With personal verification (个人认证) the Advanced plan is free — 10 requests/second, 1M characters/month; matching request pacing was applied automatically. Unverified accounts allow only ~1 request/second — raise Min interval to ~1100 ms below.")
           .addText((text) =>
-            text.setValue(settings.baidu.appId).onChange(async (value) => {
-              this.plugin.settings.baidu.appId = value.trim();
+            text.setValue(settings.presets.mt.baidu!.appId).onChange(async (value) => {
+              this.plugin.settings.presets.mt.baidu!.appId = value.trim();
               await this.plugin.saveSettings();
             })
           );
@@ -133,8 +143,8 @@ export class InterlinearSettingTab extends PluginSettingTab {
           containerEl,
           "App secret (密钥)",
           "BYOK — stored only in the local data.json; never uploaded, logged, or committed.",
-          () => settings.baidu.appSecret,
-          (v) => (this.plugin.settings.baidu.appSecret = v)
+          () => settings.presets.mt.baidu!.appSecret,
+          (v) => (this.plugin.settings.presets.mt.baidu!.appSecret = v)
         );
         break;
       case "youdao":
@@ -142,8 +152,8 @@ export class InterlinearSettingTab extends PluginSettingTab {
           .setName("App key (应用ID)")
           .setDesc("From the service's AI console (文本翻译). The console assigns each app a QPS quota (low on default apps) — conservative ~1 request/second pacing was applied automatically. Lower Min interval below only if your app's quota allows it; 411/412 errors mean it doesn't.")
           .addText((text) =>
-            text.setValue(settings.youdao.appKey).onChange(async (value) => {
-              this.plugin.settings.youdao.appKey = value.trim();
+            text.setValue(settings.presets.mt.youdao!.appKey).onChange(async (value) => {
+              this.plugin.settings.presets.mt.youdao!.appKey = value.trim();
               await this.plugin.saveSettings();
             })
           );
@@ -151,8 +161,8 @@ export class InterlinearSettingTab extends PluginSettingTab {
           containerEl,
           "App secret (应用密钥)",
           "BYOK — stored only in the local data.json; never uploaded, logged, or committed.",
-          () => settings.youdao.appSecret,
-          (v) => (this.plugin.settings.youdao.appSecret = v)
+          () => settings.presets.mt.youdao!.appSecret,
+          (v) => (this.plugin.settings.presets.mt.youdao!.appSecret = v)
         );
         break;
       default:
@@ -186,12 +196,17 @@ export class InterlinearSettingTab extends PluginSettingTab {
 
   /** The LLM-only rows (key/endpoint/model) — hidden while an MT service is active. */
   private renderLlmFields(containerEl: HTMLElement): void {
+    const presetId = this.plugin.settings.service;
+    if (!isLlmPresetId(presetId)) return;
+    const active = getActiveLlmSettings(this.plugin.settings);
+    if (!active) return;
+
     this.addSecretSetting(
       containerEl,
       "API key",
       "BYOK — stored only in the local data.json; never uploaded, logged, or committed.",
-      () => this.plugin.settings.apiKey,
-      (v) => (this.plugin.settings.apiKey = v),
+      () => active.apiKey,
+      (v) => (active.apiKey = v),
       "sk-..."
     );
 
@@ -202,35 +217,58 @@ export class InterlinearSettingTab extends PluginSettingTab {
     new Setting(containerEl)
       .setName("Base URL")
       .setDesc("Base address of the OpenAI-compatible endpoint.")
-      .addText((text) =>
+      .addText((text) => {
         text
           .setPlaceholder("https://api.deepseek.com")
-          .setValue(this.plugin.settings.baseUrl)
+          .setValue(active.baseUrl)
           .onChange(async (value) => {
-            this.plugin.settings.baseUrl = value.trim() || "https://api.deepseek.com";
+            active.baseUrl = value.trim();
             await this.plugin.saveSettings();
             refreshInsecureWarning();
-          })
-      );
+          });
+        this.restoreLlmEndpointOnBlur(text, presetId, "baseUrl", refreshInsecureWarning);
+      });
 
     // SECURITY: plain http to a remote host would send the Bearer API key
     // unencrypted. Local http (Ollama etc.) is fine and stays silent.
     const insecureWarningEl = containerEl.createDiv({ cls: "it-insecure-warning" });
     refreshInsecureWarning = () => {
       insecureWarningEl.setText(
-        isInsecureBaseUrl(this.plugin.settings.baseUrl)
+        isInsecureBaseUrl(active.baseUrl)
           ? "⚠ This endpoint uses plain http:// to a remote host — your API key would be sent unencrypted. Use https:// (http is fine only for local servers like Ollama)."
           : ""
       );
     };
     refreshInsecureWarning();
 
-    new Setting(containerEl).setName("Model").addText((text) =>
-      text.setValue(this.plugin.settings.model).onChange(async (value) => {
-        this.plugin.settings.model = value.trim() || "deepseek-v4-flash";
+    new Setting(containerEl).setName("Model").addText((text) => {
+      text.setValue(active.model).onChange(async (value) => {
+        active.model = value.trim();
         await this.plugin.saveSettings();
-      })
-    );
+      });
+      this.restoreLlmEndpointOnBlur(text, presetId, "model");
+    });
+  }
+
+  private restoreLlmEndpointOnBlur(
+    text: TextComponent,
+    presetId: LlmPresetId,
+    field: LlmEndpointField,
+    afterRestore?: () => void
+  ): void {
+    this.controlEvents?.registerDomEvent(text.inputEl, "blur", async () => {
+      if (this.plugin.settings.service !== presetId) return;
+      const active = getActiveLlmSettings(this.plugin.settings);
+      if (!active) return;
+
+      const restored = normalizeLlmEndpointFieldOnBlur(presetId, field, text.getValue());
+      if (text.getValue() !== restored) text.setValue(restored);
+      if (active[field] === restored) return;
+
+      active[field] = restored;
+      afterRestore?.();
+      await this.plugin.saveSettings();
+    });
   }
 
   /** A password-masked text row for credentials (all secrets share this shape). */
@@ -358,7 +396,8 @@ export class InterlinearSettingTab extends PluginSettingTab {
 
     // Custom instructions feed the LLM system prompt only — traditional MT
     // services have no prompt to append them to.
-    if (this.plugin.settings.service === "llm") {
+    if (isLlmPresetId(this.plugin.settings.service)) {
+      const active = getActiveLlmSettings(this.plugin.settings)!;
       new Setting(containerEl)
         .setName("Custom instructions")
         .setDesc(
@@ -367,9 +406,9 @@ export class InterlinearSettingTab extends PluginSettingTab {
         .addTextArea((text) => {
           text
             .setPlaceholder("e.g. Use Taiwanese Mandarin terms; keep a formal register.")
-            .setValue(this.plugin.settings.customInstructions)
+            .setValue(active.customInstructions)
             .onChange(async (value) => {
-              this.plugin.settings.customInstructions = value;
+              active.customInstructions = value;
               await this.plugin.saveSettings();
             });
           text.inputEl.rows = 4;
@@ -411,16 +450,17 @@ export class InterlinearSettingTab extends PluginSettingTab {
     min: number,
     max: number
   ): void {
+    const active = getActivePresetSettings(this.plugin.settings);
     new Setting(containerEl)
       .setName(name)
       .setDesc(desc)
       .addText((text) => {
-        text.setValue(String(this.plugin.settings[key]));
+        text.setValue(String(active[key]));
         text.inputEl.type = "number";
         text.onChange(async (value) => {
           const n = Number(value);
           if (!Number.isFinite(n)) return;
-          this.plugin.settings[key] = Math.min(max, Math.max(min, Math.round(n)));
+          active[key] = Math.min(max, Math.max(min, Math.round(n)));
           await this.plugin.saveSettings();
         });
       });

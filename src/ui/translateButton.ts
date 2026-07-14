@@ -36,7 +36,7 @@ import { runPool } from "../core/rateLimiter";
 import { createProvider } from "../translator/factory";
 import { HttpClient, AuthError, TranslationProvider } from "../translator/provider";
 import { TranslationCache } from "../translator/cache";
-import { DisplayMode, InterlinearSettings, isConfigured, cacheIdentity } from "../settings";
+import { DisplayMode, InterlinearSettings, isConfigured, cacheIdentity, getActivePresetSettings } from "../settings";
 
 const REVEAL_OFF_CLASS = "it-reveal-off"; // on container: hide translations, show originals
 const SYNC_DEBOUNCE_MS = 120;
@@ -276,8 +276,9 @@ export class TranslationController {
    *  hard per-request caps (traditional MT services take fewer/smaller
    *  batches than the LLM path — some exactly one segment per request). */
   private chunkForProvider(segments: Segment[], settings: InterlinearSettings, provider: TranslationProvider): Segment[][] {
-    const maxChars = Math.min(settings.batchCharBudget, provider.maxCharsPerRequest ?? Infinity);
-    const maxSegments = Math.min(settings.maxSegmentsPerBatch, provider.maxSegmentsPerRequest ?? Infinity);
+    const activePreset = getActivePresetSettings(settings);
+    const maxChars = Math.min(activePreset.batchCharBudget, provider.maxCharsPerRequest ?? Infinity);
+    const maxSegments = Math.min(activePreset.maxSegmentsPerBatch, provider.maxSegmentsPerRequest ?? Infinity);
     return chunkByBudget(segments, maxChars, maxSegments);
   }
 
@@ -400,10 +401,11 @@ export class TranslationController {
         return chunk.map((s, j) => ({ text: s.text, translated: translations[j] }));
       });
 
+      const tuning = getActivePresetSettings(settings);
       const results = await runPool(tasks, {
-        concurrency: settings.concurrency,
-        minIntervalMs: settings.minIntervalMs,
-        maxRetries: settings.maxRetries,
+        concurrency: tuning.concurrency,
+        minIntervalMs: tuning.minIntervalMs,
+        maxRetries: tuning.maxRetries,
       });
 
       let authFailed = false;
@@ -477,10 +479,11 @@ export class TranslationController {
       }
     });
 
+    const tuning = getActivePresetSettings(settings);
     const results = await runPool(tasks, {
-      concurrency: settings.concurrency,
-      minIntervalMs: settings.minIntervalMs,
-      maxRetries: settings.maxRetries,
+      concurrency: tuning.concurrency,
+      minIntervalMs: tuning.minIntervalMs,
+      maxRetries: tuning.maxRetries,
     });
 
     const failedSet = this.failedTextsFor(path);
