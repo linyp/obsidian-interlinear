@@ -1,6 +1,20 @@
-# Interlinear
+<h1 align="center">Interlinear</h1>
 
-[English](https://github.com/linyp/obsidian-interlinear/blob/main/README.md) · [简体中文](https://github.com/linyp/obsidian-interlinear/blob/main/README.zh-CN.md) · [日本語](https://github.com/linyp/obsidian-interlinear/blob/main/README.ja.md) · [한국어](https://github.com/linyp/obsidian-interlinear/blob/main/README.ko.md) · **Tiếng Việt**
+<p align="center">
+  Dịch đối chiếu theo từng đoạn trong chế độ đọc của <a href="https://obsidian.md">Obsidian</a>
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> ·
+  <a href="README.zh-CN.md">简体中文</a> ·
+  <a href="README.ja.md">日本語</a> ·
+  <a href="README.ko.md">한국어</a> ·
+  <strong>Tiếng Việt</strong>
+</p>
+
+<p align="center">
+  <img src="images/interlinear-bilingual.png" alt="Interlinear hiển thị bản dịch song ngữ theo từng đoạn trong Obsidian" width="900">
+</p>
 
 Plugin **dịch đối chiếu theo từng đoạn** dành cho chế độ đọc của
 [Obsidian](https://obsidian.md). Mở một ghi chú bằng ngoại ngữ rồi nhấn nút dịch;
@@ -131,7 +145,7 @@ Bảng lệnh cung cấp các lệnh sau. Plugin không đặt phím tắt mặc
 ## Phát triển
 
 Xem hướng dẫn build, kiểm thử, phát hành và kiến trúc tại
-[mục Develop trong README tiếng Anh](https://github.com/linyp/obsidian-interlinear/blob/main/README.md#develop).
+[mục Develop trong README tiếng Anh](README.md#develop).
 
 ## Giới hạn
 

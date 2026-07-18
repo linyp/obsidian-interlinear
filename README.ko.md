@@ -1,6 +1,20 @@
-# Interlinear
+<h1 align="center">Interlinear</h1>
 
-[English](https://github.com/linyp/obsidian-interlinear/blob/main/README.md) · [简体中文](https://github.com/linyp/obsidian-interlinear/blob/main/README.zh-CN.md) · [日本語](https://github.com/linyp/obsidian-interlinear/blob/main/README.ja.md) · **한국어** · [Tiếng Việt](https://github.com/linyp/obsidian-interlinear/blob/main/README.vi.md)
+<p align="center">
+  <a href="https://obsidian.md">Obsidian</a> 읽기 보기용 문단별 대조 번역
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> ·
+  <a href="README.zh-CN.md">简体中文</a> ·
+  <a href="README.ja.md">日本語</a> ·
+  <strong>한국어</strong> ·
+  <a href="README.vi.md">Tiếng Việt</a>
+</p>
+
+<p align="center">
+  <img src="images/interlinear-bilingual.png" alt="Obsidian에서 문단별 이중 언어 번역을 표시하는 Interlinear" width="900">
+</p>
 
 [Obsidian](https://obsidian.md) 읽기 보기에서 사용하는 문단별 **대조 번역** 플러그인입니다.
 외국어 노트를 열고 버튼을 누르면 각 원문 문단 아래에 한국어 또는 원하는 대상 언어의 번역을
@@ -122,7 +136,7 @@ v0.3.0은 설정 스키마 v2를 사용합니다. v0.2.5의 평면 설정은 한
 ## 개발
 
 빌드, 테스트, 릴리스 절차와 아키텍처는
-[영문 README의 Develop 섹션](https://github.com/linyp/obsidian-interlinear/blob/main/README.md#develop)을
+[영문 README의 Develop 섹션](README.md#develop)을
 참고하세요.
 
 ## 제한 사항

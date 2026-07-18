@@ -1,6 +1,20 @@
-# Interlinear
+<h1 align="center">Interlinear</h1>
 
-[English](https://github.com/linyp/obsidian-interlinear/blob/main/README.md) · **简体中文** · [日本語](https://github.com/linyp/obsidian-interlinear/blob/main/README.ja.md) · [한국어](https://github.com/linyp/obsidian-interlinear/blob/main/README.ko.md) · [Tiếng Việt](https://github.com/linyp/obsidian-interlinear/blob/main/README.vi.md)
+<p align="center">
+  为 <a href="https://obsidian.md">Obsidian</a> 打造的阅读模式逐段对照翻译
+</p>
+
+<p align="center">
+  <a href="README.md">English</a> ·
+  <strong>简体中文</strong> ·
+  <a href="README.ja.md">日本語</a> ·
+  <a href="README.ko.md">한국어</a> ·
+  <a href="README.vi.md">Tiếng Việt</a>
+</p>
+
+<p align="center">
+  <img src="images/interlinear-bilingual.png" alt="Interlinear 在 Obsidian 中逐段显示双语对照翻译" width="900">
+</p>
 
 为 [Obsidian](https://obsidian.md) 打造的**阅读模式对照翻译**插件。在阅读视图中打开一篇
 外语笔记，点一下按钮，Interlinear 就会把它逐段翻成中文（或任意目标语言），**与原文对照**

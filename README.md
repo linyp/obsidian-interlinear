@@ -1,6 +1,20 @@
-# Interlinear
+<h1 align="center">Interlinear</h1>
 
-**English** · [简体中文](https://github.com/linyp/obsidian-interlinear/blob/main/README.zh-CN.md) · [日本語](https://github.com/linyp/obsidian-interlinear/blob/main/README.ja.md) · [한국어](https://github.com/linyp/obsidian-interlinear/blob/main/README.ko.md) · [Tiếng Việt](https://github.com/linyp/obsidian-interlinear/blob/main/README.vi.md)
+<p align="center">
+  Reading-mode interlinear translation for <a href="https://obsidian.md">Obsidian</a>
+</p>
+
+<p align="center">
+  <strong>English</strong> ·
+  <a href="README.zh-CN.md">简体中文</a> ·
+  <a href="README.ja.md">日本語</a> ·
+  <a href="README.ko.md">한국어</a> ·
+  <a href="README.vi.md">Tiếng Việt</a>
+</p>
+
+<p align="center">
+  <img src="images/interlinear-bilingual.png" alt="Interlinear showing paragraph-by-paragraph bilingual translation in Obsidian" width="900">
+</p>
 
 Reading-mode **interlinear translation** for [Obsidian](https://obsidian.md). Open a
 foreign-language note in reading view, click one button, and Interlinear renders a
