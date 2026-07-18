@@ -5,6 +5,7 @@
  */
 import { ProviderConfig } from "./translator/provider";
 import { MtServiceId } from "./translator/langCodes";
+import { hashContent } from "./core/hash";
 
 export type DisplayMode = "bilingual" | "translation-only";
 
@@ -232,8 +233,8 @@ const DEFAULT_ADVANCED: AdvancedSettings = {
   batchCharBudget: 4000,
   // Independently of the char budget, cap segments per request: a doc of many
   // short blocks could otherwise pack dozens of <<<SEG k>>> markers into one
-  // request, where the model is likelier to miscount and force the slow
-  // per-segment fallback. 12 stays reliable without fragmenting normal prose.
+  // request, where the model is likelier to miscount the response contract.
+  // 12 stays reliable without fragmenting normal prose.
   maxSegmentsPerBatch: 12,
 };
 
@@ -729,13 +730,21 @@ export function isConfigured(s: InterlinearSettings): boolean {
 
 /**
  * Cache identity of the active backend — the "model" slot of the cache key.
- * LLM keeps the bare model name (existing users' cache entries stay valid);
- * MT services use a `mt:`-prefixed service id so they can never collide with
- * a model literally named after a service.
+ * LLM keeps the bare model name while prompt context is empty (existing users'
+ * cache entries stay valid). Non-empty Custom instructions add a content hash
+ * because they can change the translation. MT services use a `mt:`-prefixed
+ * service id so they can never collide with a model named after a service.
  */
 export function cacheIdentity(s: InterlinearSettings): string {
   const llm = getActiveLlmSettings(s);
-  return llm ? llm.model : `mt:${s.service}`;
+  if (!llm) return `mt:${s.service}`;
+  const promptContext = llm.customInstructions.trim();
+  return promptContext ? `${llm.model}:prompt:${hashContent(promptContext)}` : llm.model;
+}
+
+/** Identity of a rendered translation result, excluding credentials/rate knobs. */
+export function translationResultSignature(s: InterlinearSettings): string {
+  return JSON.stringify([cacheIdentity(s), s.targetLang]);
 }
 
 /** The active service's translation-affecting config (credentials + language). */

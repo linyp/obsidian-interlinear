@@ -9,12 +9,13 @@ by paragraph, as bilingual or translation-only.
 
 ## Why it's safe by design
 
-- **Never modifies your notes.** Translations are injected as render-layer DOM only
-  (via `registerMarkdownPostProcessor`). Close and reopen the note and the file on
-  disk is byte-for-byte unchanged.
-- **Never auto-translates.** Opening or switching notes does nothing. Translation
-  runs **only** when you explicitly click the floating / status-bar button (or run
-  the command).
+- **Never modifies your notes.** Translations are injected as render-layer DOM only;
+  the registered Markdown post-processor is a network-free boundary, while the DOM
+  adapter handles Obsidian's virtualized reading view. Close and reopen the note and
+  the file on disk is byte-for-byte unchanged.
+- **Never auto-translates.** Opening/switching notes, layout changes, scrolling, and
+  settings changes never send a translation request. Translation runs **only** when
+  you explicitly click the floating / status-bar button (or run the command).
 - **BYOK, zero telemetry.** Your credentials live only in vault-local plugin
   settings files: `data.json` and, after a settings migration, the one-time
   `data.backup.json` (both ignored by this repository). They are never hard-coded,
@@ -45,8 +46,10 @@ by paragraph, as bilingual or translation-only.
   `MutationObserver` injects cached translations into each block the instant it
   renders as you scroll.
 - **Skips what shouldn't be translated:** code blocks, math, image-only blocks,
-  bare URLs, pure symbol/number blocks, and blocks **already written in the target
-  language** (no request is sent for those).
+  bare URLs, pure symbol/number blocks, and blocks safely recognized as already in
+  a distinctive-script target language (`zh`, `ja`, `ko`, `th`, `he`, or `el`).
+  Shared-script targets such as English are translated conservatively because a
+  script alone cannot distinguish English from French, German, and others.
 - **Pluggable backend** behind a `TranslationProvider` interface, with **service
   presets** across two families and a **Test connection** button in settings:
   - **LLM** (default): DeepSeek, OpenAI, SiliconFlow, Ollama, or any custom
@@ -60,10 +63,9 @@ by paragraph, as bilingual or translation-only.
 
 - **Remote service.** When — and only when — you trigger a translation or click
   **Test connection**, the plugin sends the translatable paragraph text of the
-  active note to the **official endpoint of the service you selected** (default
-  `https://api.deepseek.com`; for traditional MT services, that service's fixed
-  API endpoint). Nothing is sent at any other time, and never to more than one
-  service.
+  active note to the active LLM preset's configured endpoint (default
+  `https://api.deepseek.com`) or, for traditional MT, that service's fixed official
+  API endpoint. Nothing is sent at any other time, and never to more than one service.
 - **Account required.** Bring your own API key / app credentials (BYOK) for the
   selected service; usage is billed by that provider, not by this plugin.
 - **No telemetry.** The plugin collects nothing and phones home nowhere.
@@ -140,7 +142,7 @@ Open **Settings → Interlinear**:
 | Max retries | 3 | On 429 / transient errors. |
 | Batch char budget | 4000 | Characters packed per request. |
 | Max segments per request | 12 | Blocks packed per request, alongside the char budget (1–100). Traditional MT services additionally enforce their own hard per-request caps. |
-| Custom instructions _(LLM only)_ | _(empty)_ | Optional text appended to the system prompt — glossary, tone, or domain. |
+| Custom instructions _(LLM only)_ | _(empty)_ | Optional text appended to the system prompt — glossary, tone, or domain. Non-empty instructions are part of the cache identity, so changing them takes effect on the next explicit translation. |
 | Persistent cache | On | Keep translations across restarts; shows size and offers one-click clear. |
 
 > DeepSeek's flash tier rate-limits by **concurrent connections**, not by RPM/TPM,
@@ -239,8 +241,9 @@ src/
                 one pure request-builder/response-parser module per backend
                 (deepseek.ts, baidu.ts, youdao.ts),
                 factory.ts (settings -> provider), langCodes.ts (per-service
-                target-language mapping), cache.ts (LRU + serialization for
-                the persistent cache);
+                target-language mapping), cache.ts (LRU + serialization),
+                cachePersistence.ts (cache.json load/write/remove in the plugin
+                folder only);
                 requestUrlClient.ts is the only requestUrl adapter
   render/       postProcessor.ts — DOM adapter + collect/inject/clear/display-mode
                 + style helpers
@@ -250,18 +253,19 @@ src/
   main.ts       composition root
 ```
 
-**Iron rule:** modules imported by tests never import the `obsidian` runtime
-(it's a types-only package). Only five shell files touch obsidian: `main.ts`,
-`ui/translateButton.ts`, `ui/settingsTab.ts`, `render/postProcessor.ts`,
-`translator/requestUrlClient.ts`. The HTTP call sits behind an injectable
-`HttpClient` seam, so the provider is fully testable without the network.
+Pure logic modules never depend on the `obsidian` runtime (a types-only package).
+The thin runtime shells are tested with an Obsidian stub and a lightweight DOM;
+providers use an injectable `HttpClient`, so their real request/parse paths are
+tested without contacting the network. DOM collection/injection, explicit-trigger
+controller behavior, the `requestUrl` adapter, and cache persistence also have
+focused tests.
 
-On the LLM path, batches are packed with numbered `<<<SEG k>>>` sentinels; if the
-model returns the wrong number of segments, the provider falls back to one request
-per segment so every translation still maps 1:1 to its source block. Traditional
-MT APIs take one text per request — inherently 1:1 — so they skip the sentinel
-protocol entirely; each provider declares its hard per-request caps and the
-controller sizes batches to fit.
+On the LLM path, batches are packed with numbered `<<<SEG k>>>` sentinels. Every
+`provider.translate()` call makes exactly one HTTP request; if the model returns
+the wrong segment count, that batch fails visibly and can be retried by the next
+explicit Translate action. Traditional MT APIs take one text per request —
+inherently 1:1 — so they skip the sentinel protocol entirely; each provider
+declares its hard per-request caps and the controller sizes batches to fit.
 
 Want another backend? Adding one is deliberately small: a pure
 request-builder/response-parser module in `src/translator/` (see `baidu.ts` /

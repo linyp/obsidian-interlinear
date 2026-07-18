@@ -17,11 +17,14 @@
 
 以下规则任何情况下都不得违反。若某个实现方式与之冲突，改方案，不要改规则。
 
-1. **绝不自动翻译。** 打开笔记、切换笔记、切换到阅读模式——这些都**不得**触发任何翻译请求。
-   翻译**有且只有一个触发入口**：用户**显式点击阅读视图右下角的悬浮按钮**。
-   插件加载完成后默认状态是「未翻译」，原文照常渲染，安静等待用户点击。
-2. **绝不修改原始 markdown 文件。** 译文只能作为渲染层 DOM 注入，走 `registerMarkdownPostProcessor`。
-   禁止任何对笔记正文的 Vault 写操作。用户关闭/重开笔记后，磁盘上的文件必须一字节未变。
+1. **绝不自动翻译。** 打开/切换笔记、切换到阅读模式、布局变化、滚动渲染、修改设置——这些都
+   **不得**触发任何翻译请求。翻译只能由用户通过已有显式入口发起：阅读视图悬浮按钮、桌面端
+   状态栏按钮或命令面板；设置页的「测试连接」是独立的显式网络操作。插件加载完成后默认状态
+   是「未翻译」，原文照常渲染，安静等待用户操作。
+2. **绝不修改原始 markdown 文件。** 译文只能作为渲染层 DOM 注入；禁止任何对笔记正文的
+   Vault 写操作。`registerMarkdownPostProcessor` 保持为无网络的渲染边界，虚拟化滚动场景由
+   controller 的 `MutationObserver` 只注入缓存结果。用户关闭/重开笔记后，磁盘上的文件必须
+   一字节未变。
 3. **MVP 只做阅读模式（Reading view）。** 不要实现编辑模式 / 实时预览（Live Preview / CodeMirror 6）的翻译。
 4. **网络请求必须用 Obsidian 的 `requestUrl`，禁止使用 `fetch`。** （`fetch` 在渲染进程里会被 CORS 拦截。）
 5. **BYOK，零遥测。** API key 仅来自设置项；禁止硬编码；禁止任何分析/遥测/上报；key 不得写入日志、不得提交仓库。
@@ -42,7 +45,7 @@
 
 ## 功能范围（MVP）
 
-- 阅读视图右下方工具栏上一个**按钮**，点击触发翻译。
+- 阅读视图右下角**悬浮按钮**、桌面端**状态栏按钮**和命令面板共享同一个显式翻译入口逻辑。
 - 点击后：收集当前文章中可翻译的段落块 → 调用翻译后端 → 在每个原文块下方注入译文 DOM。
 - **两种展示模式，可切换**：
   - 双语对照（原文在上、译文在下）
@@ -78,11 +81,13 @@ src/
     factory.ts                 # createProvider(settings, http)——settings.service → 具体实现
     langCodes.ts               # 各 MT 服务的目标语言码映射（未知码透传）
     cache.ts                   # 基于内容 hash 的翻译缓存
+    cachePersistence.ts        # cache.json 的加载/落盘/清除（只写插件目录）
 ```
 
 **关键数据流：**
-- post-processor 在渲染阶段**只渲染原文**，不做任何翻译（呼应硬约束 #1）。
-- 用户点击按钮 → 收集可翻译块 → 分批调用 provider（受并发/限速控制，命中缓存则跳过）→
+- post-processor 在渲染阶段**不做任何翻译**；MutationObserver 也只能注入已有缓存（呼应硬约束 #1）。
+- 用户从悬浮按钮、状态栏或命令面板显式触发 → 收集可翻译块 → 分批调用 provider（受并发/限速
+  控制，命中缓存则跳过）→
   在各原文块下注入带可识别 class（如 `.it-translation`）的译文节点 → 套用当前展示模式 class。
 - 再次点击 / 切换模式 → 仅操作已注入节点的可见性与 class，不重新请求。
 - **翻译 provider 抽象成接口**，DeepSeek 只是默认实现；不要把任何服务的细节散落到 UI 或
@@ -141,9 +146,9 @@ src/
   百度 1 段/1800 字符，有道 1 段/4500 字符），
   controller 的 `chunkForProvider()` 与用户 Advanced 设置取小。Advanced 的并发/间隔/重试
   对所有服务生效；Custom instructions 仅 LLM（MT 无提示词，UI 里已按服务隐藏）。
-- **缓存身份**：`cacheIdentity()`——LLM 用裸 model 名（老缓存不失效），MT 用 `mt:<service>`
-  前缀防碰撞。`providerConfigSignature` 只含**当前预设记录**的凭据：改非当前预设的 key 不清
-  failed-set。
+- **缓存身份**：`cacheIdentity()`——无自定义指令的 LLM 沿用裸 model 名（老缓存不失效）；非空
+  Custom instructions 的规范化内容以 hash 纳入身份；MT 用 `mt:<service>` 前缀防碰撞。
+  `providerConfigSignature` 只含**当前预设记录**的配置：改非当前预设的 key 不影响当前状态。
 - **签名坑**（已用测试锁死，别回归）：百度 MD5 对 urlencode **前**的原始串签名；有道 v3
   的 `input` 截断按 UTF-16 code unit（first10 + len + last10）。两家的错误都是 HTTP 200 +
   错误码 body，parser 必须先查 body。MD5/SHA-256 用 `core/md5.ts`（纯 TS）与
@@ -171,8 +176,10 @@ src/
 - [ ] `npm run build` 成功产出 `main.js`
 - [ ] `tsc --noEmit` 无类型错误
 - [ ] `manifest.json` 字段合法完整（id、name、version、minAppVersion、main 等）
-- [ ] 对**纯逻辑**有单元测试且通过：provider 请求构造、段落切分、缓存 key 生成、"跳过不翻"规则
-- [ ] 代码中可静态确认：渲染阶段无翻译调用；翻译仅由 FAB 点击触发；无任何 Vault 正文写操作；用的是 `requestUrl`
+- [ ] 对纯逻辑和关键运行时边界有测试且通过：provider 请求构造、段落切分、缓存 key、"跳过不翻"、
+      DOM 收集/注入、controller 显式触发边界、`requestUrl` 适配、缓存持久化
+- [ ] 代码中可静态确认：渲染/滚动/设置变化阶段无翻译调用；翻译仅由已有显式用户入口触发；
+      无任何 Vault 正文写操作；用的是 `requestUrl`
 
 UI 表现、真实翻译质量、双语/仅译文切换的视觉效果**由人工在 Obsidian 中验证，不计入你的自动验收**。
 

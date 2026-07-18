@@ -16,6 +16,7 @@ import {
   migrateLegacySettings,
   normalizeLlmEndpointFieldOnBlur,
   cacheIdentity,
+  translationResultSignature,
   providerConfigSignature,
   PROVIDER_PRESETS,
   MT_SERVICE_PRESETS,
@@ -704,13 +705,42 @@ describe("translation service (traditional MT additions)", () => {
     expect(isConfigured(s)).toBe(false);
   });
 
-  it("cacheIdentity keeps the bare model for llm and prefixes MT services", () => {
+  it("cacheIdentity keeps the bare model for empty LLM prompt context", () => {
     expect(cacheIdentity(normalizeSettings({ model: "deepseek-v4-flash" }))).toBe("deepseek-v4-flash");
     expect(cacheIdentity(selectPreset(normalizeSettings({}), "youdao"))).toBe("mt:youdao");
     expect(cacheIdentity(selectPreset(normalizeSettings({}), "baidu"))).toBe("mt:baidu");
     // A model literally named like a service can never collide with it.
     expect(cacheIdentity(normalizeSettings({ model: "baidu" }))).not.toBe(
       cacheIdentity(selectPreset(normalizeSettings({}), "baidu"))
+    );
+  });
+
+  it("cacheIdentity changes with normalized Custom instructions", () => {
+    const base = normalizeSettings({ model: "m", customInstructions: "" });
+    const glossaryA = updateActivePreset(base, { customInstructions: "term = 术语" });
+    const glossaryAWithSpace = updateActivePreset(base, {
+      customInstructions: "  term = 术语  ",
+    });
+    const glossaryB = updateActivePreset(base, { customInstructions: "term = 词元" });
+
+    expect(cacheIdentity(glossaryA)).toBe(cacheIdentity(glossaryAWithSpace));
+    expect(cacheIdentity(glossaryA)).not.toBe(cacheIdentity(base));
+    expect(cacheIdentity(glossaryB)).not.toBe(cacheIdentity(glossaryA));
+  });
+
+  it("translationResultSignature changes only when cached output identity changes", () => {
+    const base = normalizeSettings({ apiKey: "k", model: "m", targetLang: "en" });
+    expect(translationResultSignature(updateActivePreset(base, { apiKey: "k2" }))).toBe(
+      translationResultSignature(base)
+    );
+    expect(translationResultSignature(updateActivePreset(base, { baseUrl: "https://y" }))).toBe(
+      translationResultSignature(base)
+    );
+    expect(translationResultSignature(updateActivePreset(base, { customInstructions: "tone" }))).not.toBe(
+      translationResultSignature(base)
+    );
+    expect(translationResultSignature(normalizeSettings({ ...base, targetLang: "ja" }))).not.toBe(
+      translationResultSignature(base)
     );
   });
 

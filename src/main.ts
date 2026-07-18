@@ -9,6 +9,7 @@ import {
   UnsupportedSettingsSchemaVersionError,
 } from "./settings";
 import { TranslationCache } from "./translator/cache";
+import { TranslationCachePersistence } from "./translator/cachePersistence";
 import { obsidianRequestUrlClient } from "./translator/requestUrlClient";
 import { TranslationController } from "./ui/translateButton";
 import { InterlinearSettingTab } from "./ui/settingsTab";
@@ -30,6 +31,7 @@ const SETTINGS_MIGRATION_NOTICE =
 export default class InterlinearPlugin extends Plugin {
   settings: InterlinearSettings = DEFAULT_SETTINGS;
   readonly cache = new TranslationCache();
+  private cachePersistence!: TranslationCachePersistence;
   private controller!: TranslationController;
   private settingTab: InterlinearSettingTab | null = null;
   /** Last seen provider-config signature; a change drops stale per-note failures. */
@@ -43,7 +45,13 @@ export default class InterlinearPlugin extends Plugin {
   async onload(): Promise<void> {
     await this.loadSettings();
     this.lastConfigSig = providerConfigSignature(this.settings);
-    await this.loadCacheFromDisk();
+    this.cachePersistence = new TranslationCachePersistence({
+      cache: this.cache,
+      adapter: this.app.vault.adapter,
+      path: this.pluginFilePath("cache.json"),
+      enabled: () => this.settings.persistCache,
+    });
+    await this.cachePersistence.load();
     this.cache.onDirty = () => this.scheduleCacheFlush();
 
     this.controller = new TranslationController({
@@ -94,7 +102,7 @@ export default class InterlinearPlugin extends Plugin {
   onunload(): void {
     // register*/add* registrations are torn down automatically by Obsidian.
     this.scheduleCacheFlush.cancel();
-    void this.flushCache(); // best-effort final flush of the persistent cache
+    void this.cachePersistence.flush(); // best-effort final flush of the persistent cache
   }
 
   async loadSettings(): Promise<void> {
@@ -170,55 +178,23 @@ export default class InterlinearPlugin extends Plugin {
     return `${dir}/${filename}`;
   }
 
-  private cacheFilePath(): string {
-    return this.pluginFilePath("cache.json");
-  }
-
-  private async loadCacheFromDisk(): Promise<void> {
-    if (!this.settings.persistCache) return;
-    try {
-      const path = this.cacheFilePath();
-      if (!(await this.app.vault.adapter.exists(path))) return;
-      this.cache.hydrate(await this.app.vault.adapter.read(path));
-    } catch (err) {
-      console.error("Interlinear: failed to load translation cache", err);
-    }
-  }
-
   private async flushCache(): Promise<void> {
-    if (!this.settings.persistCache) return;
-    try {
-      await this.app.vault.adapter.write(this.cacheFilePath(), this.cache.serialize());
-    } catch (err) {
-      console.error("Interlinear: failed to save translation cache", err);
-    }
+    await this.cachePersistence.flush();
   }
 
   /** Settings-tab action: wipe the cache in memory and on disk. */
   async clearCacheCompletely(): Promise<void> {
     this.scheduleCacheFlush.cancel();
     this.cache.clear();
-    await this.removeCacheFile();
+    // clear() marks the cache dirty; cancel the newly scheduled empty flush so
+    // the explicit Clear action leaves no cache.json behind.
+    this.scheduleCacheFlush.cancel();
+    await this.cachePersistence.removeFile();
   }
 
   /** Settings-tab action: react to the persist-cache toggle. */
   async onPersistCacheChanged(): Promise<void> {
-    if (this.settings.persistCache) {
-      await this.flushCache();
-    } else {
-      this.scheduleCacheFlush.cancel();
-      await this.removeCacheFile();
-    }
-  }
-
-  private async removeCacheFile(): Promise<void> {
-    try {
-      const path = this.cacheFilePath();
-      if (await this.app.vault.adapter.exists(path)) {
-        await this.app.vault.adapter.remove(path);
-      }
-    } catch (err) {
-      console.error("Interlinear: failed to remove translation cache file", err);
-    }
+    if (!this.settings.persistCache) this.scheduleCacheFlush.cancel();
+    await this.cachePersistence.onEnabledChanged();
   }
 }

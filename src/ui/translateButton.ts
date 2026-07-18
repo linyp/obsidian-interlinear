@@ -31,12 +31,20 @@ import {
   TRANSLATION_CLASS,
 } from "../render/postProcessor";
 import { isLikelyTargetLanguage } from "../core/blockRules";
+import { hashContent } from "../core/hash";
 import { chunkByBudget, Segment } from "../core/segmentation";
 import { runPool } from "../core/rateLimiter";
 import { createProvider } from "../translator/factory";
 import { HttpClient, AuthError, TranslationProvider } from "../translator/provider";
 import { TranslationCache } from "../translator/cache";
-import { DisplayMode, InterlinearSettings, isConfigured, cacheIdentity, getActivePresetSettings } from "../settings";
+import {
+  DisplayMode,
+  InterlinearSettings,
+  isConfigured,
+  cacheIdentity,
+  getActivePresetSettings,
+  translationResultSignature,
+} from "../settings";
 
 const REVEAL_OFF_CLASS = "it-reveal-off"; // on container: hide translations, show originals
 const SYNC_DEBOUNCE_MS = 120;
@@ -45,6 +53,8 @@ interface FileState {
   active: boolean; // translation has been run for this note
   revealed: boolean; // translations currently shown (vs "show original")
   mode: DisplayMode;
+  resultSignature: string;
+  sourceSignature: string;
 }
 
 interface ActiveReading {
@@ -74,7 +84,7 @@ export class TranslationController {
   private readonly cache: TranslationCache;
 
   private readonly fileStates = new Map<string, FileState>();
-  /** In-flight translation flows per note (visible-sync + whole-doc may overlap). */
+  /** In-flight explicit visible translation per note. */
   private readonly busyCount = new Map<string, number>();
   /** Batch progress per note while busy ("Translating done/total…"). */
   private readonly progress = new Map<string, { done: number; total: number }>();
@@ -131,11 +141,15 @@ export class TranslationController {
   /** Refresh observer + FAB + status bar when the active leaf/layout changes. */
   syncActiveView(): void {
     const active = this.getActiveReading();
-    if (active && this.stateFor(active.path).active) {
+    const st = active ? this.stateFor(active.path) : null;
+    if (active && st?.active && st.resultSignature !== translationResultSignature(this.getSettings())) {
+      this.deactivate(active, st);
+    }
+    if (active && st?.active) {
       this.observe(active.container);
       // Re-assert the container classes (also picks up settings changes, e.g.
       // a new translation style) — pure class work, never a request.
-      this.applyView(active, this.stateFor(active.path));
+      this.applyView(active, st);
       this.scheduleSync(); // re-inject cached translations when returning to the note
     }
     this.syncFab(active);
@@ -152,7 +166,11 @@ export class TranslationController {
     const st = this.stateFor(active.path);
     if (!st.active) {
       this.activate(active);
-    } else if ((this.failedTexts.get(active.path)?.size ?? 0) > 0) {
+    } else if (
+      (this.failedTexts.get(active.path)?.size ?? 0) > 0 ||
+      st.resultSignature !== translationResultSignature(this.getSettings()) ||
+      st.sourceSignature !== this.sourceSignature(active)
+    ) {
       // Blocks failed last time — re-triggering retries them (as the status/
       // notice messages promise) instead of toggling translation ↔ original.
       this.retryFailed(active, st);
@@ -179,17 +197,25 @@ export class TranslationController {
   }
 
   /**
-   * The translation config changed (edited in settings, or synced in via
-   * onExternalSettingsChange). Drop every note's "failed/skip" set so blocks
-   * that failed under the old config (e.g. a wrong key/endpoint) are eligible
-   * again, then let the ALREADY-ACTIVE note re-attempt them. Only active notes
-   * (ones the user already chose to translate) re-sync — opening/switching a
-   * note still never translates on its own (hard constraint #1).
+   * The translation config changed (edited in settings, or synced externally).
+   * Result-affecting changes invalidate rendered state, but NEVER start a
+   * request. Credential-only changes keep the current result and failed set so
+   * the next explicit Translate action can retry under the new credentials.
    */
   onProviderConfigChanged(): void {
-    this.failedTexts.clear();
-    // scheduleSync only re-runs when the active note is already `active`.
-    this.scheduleSync();
+    const currentSignature = translationResultSignature(this.getSettings());
+    const active = this.getActiveReading();
+    for (const [path, st] of this.fileStates) {
+      if (!st.active || st.resultSignature === currentSignature) continue;
+      if (active?.path === path) this.deactivate(active, st);
+      else {
+        st.active = false;
+        st.revealed = false;
+        st.resultSignature = "";
+        st.sourceSignature = "";
+      }
+      this.failedTexts.delete(path);
+    }
     this.paint();
   }
 
@@ -197,15 +223,7 @@ export class TranslationController {
     const active = this.getActiveReading();
     if (!active) return;
     const st = this.stateFor(active.path);
-    st.active = false;
-    st.revealed = false;
-    this.failedTexts.delete(active.path);
-    if (this.observedEl === active.container) {
-      this.observer?.disconnect();
-      this.observedEl = null;
-    }
-    clearTranslations(active.container);
-    active.container.removeClass(REVEAL_OFF_CLASS);
+    this.deactivate(active, st);
     this.paint();
   }
 
@@ -222,7 +240,13 @@ export class TranslationController {
   private stateFor(path: string): FileState {
     let st = this.fileStates.get(path);
     if (!st) {
-      st = { active: false, revealed: false, mode: this.getSettings().defaultDisplayMode };
+      st = {
+        active: false,
+        revealed: false,
+        mode: this.getSettings().defaultDisplayMode,
+        resultSignature: "",
+        sourceSignature: "",
+      };
       this.fileStates.set(path, st);
     }
     return st;
@@ -242,6 +266,8 @@ export class TranslationController {
     const st = this.stateFor(active.path);
     st.active = true;
     st.revealed = true;
+    st.resultSignature = translationResultSignature(this.getSettings());
+    st.sourceSignature = this.sourceSignature(active);
     this.observe(active.container);
     this.applyView(active, st);
     this.paint();
@@ -259,11 +285,18 @@ export class TranslationController {
     this.runTranslation(active, st);
   }
 
-  /** Clear the failed-block set and (re)run the visible + whole-doc flows. */
+  /** Run visible work first, then pre-translate remaining whole-document misses. */
   private runTranslation(active: ActiveReading, st: FileState): void {
     this.failedTexts.delete(active.path); // re-attempt previously-failed blocks
-    void this.syncVisible(active, st);
-    void this.pretranslateWholeDoc(active);
+    const resultSignature = translationResultSignature(this.getSettings());
+    const sourceSignature = this.sourceSignature(active);
+    st.resultSignature = resultSignature;
+    st.sourceSignature = sourceSignature;
+    void (async () => {
+      await this.syncVisible(active, st, true);
+      if (!this.isRunCurrent(active, st, resultSignature, sourceSignature)) return;
+      await this.pretranslateWholeDoc(active, st, resultSignature, sourceSignature);
+    })();
   }
 
   private ensureConfigured(): boolean {
@@ -287,6 +320,39 @@ export class TranslationController {
     active.container.toggleClass(REVEAL_OFF_CLASS, !st.revealed);
     applyDisplayMode(active.container, st.mode);
     applyTranslationStyle(active.container, this.getSettings().translationStyle);
+  }
+
+  private sourceSignature(active: ActiveReading): string {
+    return hashContent(active.view.getViewData());
+  }
+
+  private isRunCurrent(
+    active: ActiveReading,
+    st: FileState,
+    resultSignature: string,
+    sourceSignature: string
+  ): boolean {
+    return (
+      st.active &&
+      st.resultSignature === resultSignature &&
+      st.sourceSignature === sourceSignature &&
+      this.sourceSignature(active) === sourceSignature &&
+      this.getActiveReading()?.path === active.path
+    );
+  }
+
+  private deactivate(active: ActiveReading, st: FileState): void {
+    st.active = false;
+    st.revealed = false;
+    st.resultSignature = "";
+    st.sourceSignature = "";
+    this.failedTexts.delete(active.path);
+    if (this.observedEl === active.container) {
+      this.observer?.disconnect();
+      this.observedEl = null;
+    }
+    clearTranslations(active.container);
+    active.container.removeClass(REVEAL_OFF_CLASS);
   }
 
   private observe(container: HTMLElement): void {
@@ -322,19 +388,19 @@ export class TranslationController {
       this.syncTimer = null;
       const active = this.getActiveReading();
       if (active && this.stateFor(active.path).active) {
-        void this.syncVisible(active, this.stateFor(active.path));
+        void this.syncVisible(active, this.stateFor(active.path), false);
       }
     }, SYNC_DEBOUNCE_MS);
   }
 
-  /** Translate/inject the blocks currently on screen (cache hits instant; misses
-   *  translated once). Serialized per note so observer ticks can't double-run. */
-  private async syncVisible(active: ActiveReading, st: FileState): Promise<void> {
+  /** Inject cached visible translations; explicit actions may also translate misses. */
+  private async syncVisible(
+    active: ActiveReading,
+    st: FileState,
+    allowNetwork: boolean
+  ): Promise<void> {
     if (!st.active) return;
-    if (this.syncing.has(active.path)) {
-      this.scheduleSync();
-      return;
-    }
+    if (allowNetwork && this.syncing.has(active.path)) return;
     const failed = this.failedTexts.get(active.path);
     const targetLang = this.getSettings().targetLang;
     const blocks = collectTranslatableBlocks(active.container).filter((b) => {
@@ -346,19 +412,36 @@ export class TranslationController {
     });
     if (blocks.length === 0) return;
 
-    this.syncing.add(active.path);
-    this.busyStart(active.path);
+    if (allowNetwork) {
+      this.syncing.add(active.path);
+      this.busyStart(active.path);
+    }
     try {
-      await this.translateBatch(blocks, active.container, active.path, this.getSettings(), st);
+      await this.translateBatch(
+        blocks,
+        active.container,
+        active.path,
+        this.getSettings(),
+        st,
+        allowNetwork
+      );
     } catch (err) {
       new Notice("Translation failed: " + errorMessage(err));
     } finally {
-      this.syncing.delete(active.path);
-      this.busyEnd(active.path);
+      if (allowNetwork) {
+        this.syncing.delete(active.path);
+        this.busyEnd(active.path);
+      }
     }
   }
 
-  private async pretranslateWholeDoc(active: ActiveReading): Promise<void> {
+  private async pretranslateWholeDoc(
+    active: ActiveReading,
+    st: FileState,
+    resultSignature: string,
+    sourceSignature: string
+  ): Promise<void> {
+    if (!this.isRunCurrent(active, st, resultSignature, sourceSignature)) return;
     const settings = this.getSettings();
     if (!isConfigured(settings)) return;
 
@@ -373,6 +456,7 @@ export class TranslationController {
     } catch {
       return;
     }
+    if (!this.isRunCurrent(active, st, resultSignature, sourceSignature)) return;
 
     const cacheId = cacheIdentity(settings);
     const { targetLang } = settings;
@@ -382,9 +466,13 @@ export class TranslationController {
       new Notice("Already in the target language — nothing to translate.");
       return;
     }
-    const misses = translatable.filter((t) => this.cache.get(t, cacheId, targetLang) === undefined);
+    const failedSet = this.failedTexts.get(active.path);
+    const misses = translatable.filter(
+      (t) =>
+        !failedSet?.has(t) && this.cache.get(t, cacheId, targetLang) === undefined
+    );
     if (misses.length === 0) {
-      await this.syncVisible(active, this.stateFor(active.path));
+      await this.syncVisible(active, this.stateFor(active.path), false);
       return;
     }
 
@@ -411,12 +499,15 @@ export class TranslationController {
       let authFailed = false;
       let failed = 0;
       let firstError: unknown;
-      for (const result of results) {
+      const failedTexts = this.failedTextsFor(active.path);
+      for (let i = 0; i < results.length; i++) {
+        const result = results[i];
         if (!result.ok) {
           failed++;
           firstError ??= result.error;
           if (result.error instanceof AuthError) authFailed = true;
           console.warn("Interlinear: whole-note batch failed:", result.error);
+          for (const segment of chunks[i]) failedTexts.add(segment.text);
           continue;
         }
         for (const { text, translated } of result.value) {
@@ -433,7 +524,7 @@ export class TranslationController {
       this.busyEnd(active.path);
     }
 
-    await this.syncVisible(active, this.stateFor(active.path));
+    await this.syncVisible(active, this.stateFor(active.path), false);
   }
 
   private async translateBatch(
@@ -441,7 +532,8 @@ export class TranslationController {
     container: HTMLElement | null,
     path: string,
     settings: InterlinearSettings,
-    st: FileState
+    st: FileState,
+    allowNetwork: boolean
   ): Promise<void> {
     const cacheId = cacheIdentity(settings);
     const { targetLang } = settings;
@@ -458,7 +550,7 @@ export class TranslationController {
       }
     }
     if (container) applyDisplayMode(container, st.mode);
-    if (misses.length === 0) return;
+    if (misses.length === 0 || !allowNetwork) return;
 
     for (const miss of misses) setBlockLoading(miss.el, true);
 
@@ -474,7 +566,9 @@ export class TranslationController {
       for (let j = 0; j < chunk.length; j++) {
         const miss = misses[chunk[j].index];
         this.cache.set(miss.text, cacheId, targetLang, translations[j]);
-        await injectTranslation(miss.el, translations[j], ctx);
+        if (st.active && st.resultSignature === translationResultSignature(settings)) {
+          await injectTranslation(miss.el, translations[j], ctx);
+        }
         setBlockLoading(miss.el, false);
       }
     });
@@ -504,7 +598,9 @@ export class TranslationController {
       }
     }
 
-    if (container) applyDisplayMode(container, st.mode);
+    if (container && st.active && st.resultSignature === translationResultSignature(settings)) {
+      applyDisplayMode(container, st.mode);
+    }
     if (authFailed) new Notice("Authentication failed — check your API key.");
     else if (failed > 0)
       new Notice(`${failed} batch(es) failed (${errorMessage(firstError)}) — trigger again to retry.`);

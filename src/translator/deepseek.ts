@@ -3,8 +3,8 @@
  *   - `buildChatRequest`  : construct the OpenAI-compatible request spec
  *   - `parseChatResponse` : validate status, extract content, unpack segments
  *
- * The `DeepSeekProvider` class (composing these with an injected HttpClient +
- * per-segment fallback) and the `requestUrl` adapter arrive in Milestone 3.
+ * The `DeepSeekProvider` class composes these with an injected HttpClient; the
+ * `requestUrl` adapter arrives in Milestone 3.
  * No `obsidian`, no network here.
  */
 import {
@@ -93,8 +93,8 @@ function extractContent(payload: unknown): string | undefined {
  *   401/403 -> AuthError, 429 -> RateLimitError, other non-2xx/bad body ->
  *   MalformedResponseError, batch count/order mismatch -> SegmentCountMismatchError.
  *
- * For a single-segment request (e.g. the per-segment fallback) the model often
- * omits the marker; we then accept the whole content as the one translation.
+ * For a single-segment request the model may omit the marker; we then accept
+ * the whole content as the one translation.
  */
 export function parseChatResponse(res: HttpResponseLike, expectedCount: number): string[] {
   if (res.status === 401 || res.status === 403) throw new AuthError();
@@ -147,27 +147,7 @@ export class DeepSeekProvider implements TranslationProvider {
 
   async translate(segments: string[]): Promise<string[]> {
     if (segments.length === 0) return [];
-    try {
-      const res = await this.http(buildChatRequest(segments, this.config));
-      return parseChatResponse(res, segments.length);
-    } catch (err) {
-      // Only a broken batch contract triggers the fallback; auth/rate-limit/
-      // malformed errors propagate to the caller (and the rate limiter).
-      if (err instanceof SegmentCountMismatchError && segments.length > 1) {
-        return this.translateOneByOne(segments);
-      }
-      throw err;
-    }
-  }
-
-  /** Per-segment fallback: one request each, so every result maps 1:1. */
-  private async translateOneByOne(segments: string[]): Promise<string[]> {
-    const out: string[] = [];
-    for (const segment of segments) {
-      const res = await this.http(buildChatRequest([segment], this.config));
-      const [translated] = parseChatResponse(res, 1);
-      out.push(translated);
-    }
-    return out;
+    const res = await this.http(buildChatRequest(segments, this.config));
+    return parseChatResponse(res, segments.length);
   }
 }

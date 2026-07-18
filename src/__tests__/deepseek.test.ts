@@ -91,7 +91,7 @@ describe("parseChatResponse", () => {
     expect(parseChatResponse(chatResponse(content), 2)).toEqual(["你好", "世界"]);
   });
 
-  it("accepts a marker-less single segment (per-segment fallback leniency)", () => {
+  it("accepts a marker-less single-segment response", () => {
     expect(parseChatResponse(chatResponse("你好世界"), 1)).toEqual(["你好世界"]);
   });
 

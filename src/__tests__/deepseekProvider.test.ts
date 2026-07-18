@@ -6,6 +6,7 @@ import {
   HttpResponseLike,
   AuthError,
   RateLimitError,
+  SegmentCountMismatchError,
 } from "../translator/provider";
 
 const cfg: ProviderConfig = {
@@ -18,13 +19,6 @@ const cfg: ProviderConfig = {
 function batchResponse(translations: string[]): HttpResponseLike {
   const content = translations.map((t, i) => `<<<SEG ${i + 1}>>>\n${t}`).join("\n\n");
   const payload = { choices: [{ message: { content } }] };
-  return { status: 200, text: JSON.stringify(payload), json: payload };
-}
-
-// A single-segment reply WITHOUT a marker (the typical model behaviour),
-// which parseChatResponse accepts leniently when expectedCount === 1.
-function singleResponse(translation: string): HttpResponseLike {
-  const payload = { choices: [{ message: { content: translation } }] };
   return { status: 200, text: JSON.stringify(payload), json: payload };
 }
 
@@ -47,22 +41,16 @@ describe("DeepSeekProvider.translate", () => {
     expect(http).toHaveBeenCalledTimes(1);
   });
 
-  it("falls back to per-segment requests when the batch contract fails", async () => {
-    // First (batch) call returns a short batch -> SegmentCountMismatchError;
-    // the provider then issues one request per segment and recovers N results.
-    const responses: HttpResponseLike[] = [
-      batchResponse(["only-one"]), // got 1, expected 2 -> mismatch
-      singleResponse("你好"),
-      singleResponse("世界"),
-    ];
-    let call = 0;
-    const http = vi.fn(
-      async (_req: HttpRequestSpec): Promise<HttpResponseLike> => responses[call++]
+  it("propagates a short batch contract failure after exactly one request", async () => {
+    const http = vi.fn(async (_req: HttpRequestSpec): Promise<HttpResponseLike> =>
+      batchResponse(["only-one"])
     );
     const provider = new DeepSeekProvider({ config: cfg, http });
 
-    expect(await provider.translate(["hello", "world"])).toEqual(["你好", "世界"]);
-    expect(http).toHaveBeenCalledTimes(3); // 1 batch + 2 singles
+    await expect(provider.translate(["hello", "world"])).rejects.toBeInstanceOf(
+      SegmentCountMismatchError
+    );
+    expect(http).toHaveBeenCalledTimes(1);
   });
 
   it("propagates non-batch errors (e.g. auth) without falling back", async () => {
@@ -74,22 +62,18 @@ describe("DeepSeekProvider.translate", () => {
     expect(http).toHaveBeenCalledTimes(1); // no per-segment retries on auth failure
   });
 
-  it("falls back when the model returns TOO MANY segments", async () => {
-    const responses: HttpResponseLike[] = [
-      batchResponse(["x", "y", "z"]), // expected 2, got 3 -> mismatch
-      singleResponse("你好"),
-      singleResponse("世界"),
-    ];
-    let call = 0;
-    const http = vi.fn(
-      async (_req: HttpRequestSpec): Promise<HttpResponseLike> => responses[call++]
+  it("propagates an oversized batch contract failure after exactly one request", async () => {
+    const http = vi.fn(async (_req: HttpRequestSpec): Promise<HttpResponseLike> =>
+      batchResponse(["x", "y", "z"])
     );
     const provider = new DeepSeekProvider({ config: cfg, http });
-    expect(await provider.translate(["hello", "world"])).toEqual(["你好", "世界"]);
-    expect(http).toHaveBeenCalledTimes(3);
+    await expect(provider.translate(["hello", "world"])).rejects.toBeInstanceOf(
+      SegmentCountMismatchError
+    );
+    expect(http).toHaveBeenCalledTimes(1);
   });
 
-  it("propagates a rate-limit error so the pool can retry (no fallback)", async () => {
+  it("propagates a rate-limit error so the pool can retry", async () => {
     const http = vi.fn(
       async (_req: HttpRequestSpec): Promise<HttpResponseLike> => ({ status: 429, text: "" })
     );
