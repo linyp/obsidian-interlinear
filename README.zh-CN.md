@@ -5,11 +5,11 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> ·
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.md">English</a> ·
   <strong>简体中文</strong> ·
-  <a href="README.ja.md">日本語</a> ·
-  <a href="README.ko.md">한국어</a> ·
-  <a href="README.vi.md">Tiếng Việt</a>
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.ja.md">日本語</a> ·
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.ko.md">한국어</a> ·
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.vi.md">Tiếng Việt</a>
 </p>
 
 <p align="center">

@@ -5,11 +5,11 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> ·
-  <a href="README.zh-CN.md">简体中文</a> ·
-  <a href="README.ja.md">日本語</a> ·
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.md">English</a> ·
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.zh-CN.md">简体中文</a> ·
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.ja.md">日本語</a> ·
   <strong>한국어</strong> ·
-  <a href="README.vi.md">Tiếng Việt</a>
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.vi.md">Tiếng Việt</a>
 </p>
 
 <p align="center">
@@ -136,7 +136,7 @@ v0.3.0은 설정 스키마 v2를 사용합니다. v0.2.5의 평면 설정은 한
 ## 개발
 
 빌드, 테스트, 릴리스 절차와 아키텍처는
-[영문 README의 Develop 섹션](README.md#develop)을
+[영문 README의 Develop 섹션](https://github.com/linyp/obsidian-interlinear/blob/main/README.md#develop)을
 참고하세요.
 
 ## 제한 사항

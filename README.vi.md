@@ -5,10 +5,10 @@
 </p>
 
 <p align="center">
-  <a href="README.md">English</a> ·
-  <a href="README.zh-CN.md">简体中文</a> ·
-  <a href="README.ja.md">日本語</a> ·
-  <a href="README.ko.md">한국어</a> ·
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.md">English</a> ·
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.zh-CN.md">简体中文</a> ·
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.ja.md">日本語</a> ·
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.ko.md">한국어</a> ·
   <strong>Tiếng Việt</strong>
 </p>
 
@@ -145,7 +145,7 @@ Bảng lệnh cung cấp các lệnh sau. Plugin không đặt phím tắt mặc
 ## Phát triển
 
 Xem hướng dẫn build, kiểm thử, phát hành và kiến trúc tại
-[mục Develop trong README tiếng Anh](README.md#develop).
+[mục Develop trong README tiếng Anh](https://github.com/linyp/obsidian-interlinear/blob/main/README.md#develop).
 
 ## Giới hạn
 
