@@ -91,11 +91,10 @@ in a browser and click **Install**.
 Updates arrive through Obsidian's plugin update flow — **Settings → Community
 plugins → Check for updates**.
 
-### Upgrading settings from v0.2.5
+### Upgrading to v0.3.0 from v0.2.5
 
-The first release using settings schema v2 migrates v0.2.5's flat settings once
-and preserves the original data in `data.backup.json` before rewriting
-`data.json`.
+v0.3.0 uses settings schema v2. It migrates v0.2.5's flat settings once and
+preserves the original data in `data.backup.json` before rewriting `data.json`.
 
 If you sync plugin settings, update Interlinear on **every synced device before
 changing its settings on any device**. Running mixed plugin versions and

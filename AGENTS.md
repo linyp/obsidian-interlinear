@@ -129,7 +129,8 @@ src/
 - **每个预设只有一份独立持久化记录。** LLM 位于 `settings.presets.llm[presetId]`；百度/
   有道位于 `settings.presets.mt.baidu/youdao`，凭据与 Advanced 调优存放在同一记录。首次选择
   用该预设的推荐默认值创建记录，以后切回恢复原记录，切换服务不得丢 key 或用户调优。
-  业务逻辑读取活跃配置时使用 `getActivePresetSettings()` / `getActiveLlmSettings()`。
+  业务逻辑读取活跃配置时使用 `getActivePresetSettings()` / `getActiveLlmSettings()`；设置页写入
+  任何预设自有字段时必须通过 `updateActivePreset()`，禁止直接修改嵌套记录。
 - **每次 `translate()` 调用 = 恰好一次 HTTP 请求。** 限速由 `runPool` 的并发/间隔控制
   （`minIntervalMs` 是跨并发的全局起跑间隔）；provider 内部**绝不能循环发多请求**（会绕过
   QPS 限速）。百度基础文本翻译完成**个人认证**后免费：高级版 QPS 10、每月 100 万字符，

@@ -13,7 +13,7 @@ import { obsidianRequestUrlClient } from "./translator/requestUrlClient";
 import { TranslationController } from "./ui/translateButton";
 import { InterlinearSettingTab } from "./ui/settingsTab";
 
-const SETTINGS_MIGRATION_NOTICE_MS = 15_000;
+const SETTINGS_MIGRATION_NOTICE_MS = 20_000;
 const SETTINGS_MIGRATION_NOTICE =
   "Interlinear upgraded its settings format and kept a local backup as data.backup.json. If you sync plugin settings, update Interlinear on every device before changing settings; mixed versions and downgrades are not supported.";
 

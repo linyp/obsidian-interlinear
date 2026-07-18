@@ -13,8 +13,10 @@ import {
   MT_SERVICE_PRESETS,
   selectPreset,
   TRANSLATION_STYLES,
+  updateActivePreset,
 } from "../settings";
 import type {
+  ActivePresetPatch,
   DisplayMode,
   FabVisibility,
   LlmEndpointField,
@@ -103,6 +105,12 @@ export class InterlinearSettingTab extends PluginSettingTab {
     this.controlEvents = null;
   }
 
+  /** Route every preset-owned UI edit through the same pure update boundary. */
+  private async saveActivePresetPatch(patch: ActivePresetPatch): Promise<void> {
+    this.plugin.settings = updateActivePreset(this.plugin.settings, patch);
+    await this.plugin.saveSettings();
+  }
+
   // --- Translation service ---------------------------------------------------
 
   private renderServiceSection(containerEl: HTMLElement): void {
@@ -135,8 +143,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
           .setDesc("From the service's developer console (通用翻译 API). With personal verification (个人认证) the Advanced plan is free — 10 requests/second, 1M characters/month; matching request pacing was applied automatically. Unverified accounts allow only ~1 request/second — raise Min interval to ~1100 ms below.")
           .addText((text) =>
             text.setValue(settings.presets.mt.baidu!.appId).onChange(async (value) => {
-              this.plugin.settings.presets.mt.baidu!.appId = value.trim();
-              await this.plugin.saveSettings();
+              await this.saveActivePresetPatch({ appId: value.trim() });
             })
           );
         this.addSecretSetting(
@@ -144,7 +151,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
           "App secret (密钥)",
           "BYOK — stored only in local plugin settings files; never uploaded, logged, or committed.",
           () => settings.presets.mt.baidu!.appSecret,
-          (v) => (this.plugin.settings.presets.mt.baidu!.appSecret = v)
+          (v) => ({ appSecret: v })
         );
         break;
       case "youdao":
@@ -153,8 +160,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
           .setDesc("From the service's AI console (文本翻译). The console assigns each app a QPS quota (low on default apps) — conservative ~1 request/second pacing was applied automatically. Lower Min interval below only if your app's quota allows it; 411/412 errors mean it doesn't.")
           .addText((text) =>
             text.setValue(settings.presets.mt.youdao!.appKey).onChange(async (value) => {
-              this.plugin.settings.presets.mt.youdao!.appKey = value.trim();
-              await this.plugin.saveSettings();
+              await this.saveActivePresetPatch({ appKey: value.trim() });
             })
           );
         this.addSecretSetting(
@@ -162,7 +168,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
           "App secret (应用密钥)",
           "BYOK — stored only in local plugin settings files; never uploaded, logged, or committed.",
           () => settings.presets.mt.youdao!.appSecret,
-          (v) => (this.plugin.settings.presets.mt.youdao!.appSecret = v)
+          (v) => ({ appSecret: v })
         );
         break;
       default:
@@ -206,7 +212,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
       "API key",
       "BYOK — stored only in local plugin settings files; never uploaded, logged, or committed.",
       () => active.apiKey,
-      (v) => (active.apiKey = v),
+      (v) => ({ apiKey: v }),
       "sk-..."
     );
 
@@ -222,8 +228,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
           .setPlaceholder("https://api.deepseek.com")
           .setValue(active.baseUrl)
           .onChange(async (value) => {
-            active.baseUrl = value.trim();
-            await this.plugin.saveSettings();
+            await this.saveActivePresetPatch({ baseUrl: value.trim() });
             refreshInsecureWarning();
           });
         this.restoreLlmEndpointOnBlur(text, presetId, "baseUrl", refreshInsecureWarning);
@@ -233,8 +238,9 @@ export class InterlinearSettingTab extends PluginSettingTab {
     // unencrypted. Local http (Ollama etc.) is fine and stays silent.
     const insecureWarningEl = containerEl.createDiv({ cls: "it-insecure-warning" });
     refreshInsecureWarning = () => {
+      const currentBaseUrl = getActiveLlmSettings(this.plugin.settings)?.baseUrl ?? "";
       insecureWarningEl.setText(
-        isInsecureBaseUrl(active.baseUrl)
+        isInsecureBaseUrl(currentBaseUrl)
           ? "⚠ This endpoint uses plain http:// to a remote host — your API key would be sent unencrypted. Use https:// (http is fine only for local servers like Ollama)."
           : ""
       );
@@ -243,8 +249,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
 
     new Setting(containerEl).setName("Model").addText((text) => {
       text.setValue(active.model).onChange(async (value) => {
-        active.model = value.trim();
-        await this.plugin.saveSettings();
+        await this.saveActivePresetPatch({ model: value.trim() });
       });
       this.restoreLlmEndpointOnBlur(text, presetId, "model");
     });
@@ -265,9 +270,8 @@ export class InterlinearSettingTab extends PluginSettingTab {
       if (text.getValue() !== restored) text.setValue(restored);
       if (active[field] === restored) return;
 
-      active[field] = restored;
+      await this.saveActivePresetPatch({ [field]: restored } as ActivePresetPatch);
       afterRestore?.();
-      await this.plugin.saveSettings();
     });
   }
 
@@ -277,7 +281,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
     name: string,
     desc: string,
     getValue: () => string,
-    setValue: (value: string) => void,
+    patchValue: (value: string) => ActivePresetPatch,
     placeholder?: string
   ): void {
     new Setting(containerEl)
@@ -286,8 +290,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
       .addText((text) => {
         if (placeholder) text.setPlaceholder(placeholder);
         text.setValue(getValue()).onChange(async (value) => {
-          setValue(value.trim());
-          await this.plugin.saveSettings();
+          await this.saveActivePresetPatch(patchValue(value.trim()));
         });
         text.inputEl.type = "password";
       });
@@ -408,8 +411,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
             .setPlaceholder("e.g. Use Taiwanese Mandarin terms; keep a formal register.")
             .setValue(active.customInstructions)
             .onChange(async (value) => {
-              active.customInstructions = value;
-              await this.plugin.saveSettings();
+              await this.saveActivePresetPatch({ customInstructions: value });
             });
           text.inputEl.rows = 4;
         });
@@ -460,8 +462,9 @@ export class InterlinearSettingTab extends PluginSettingTab {
         text.onChange(async (value) => {
           const n = Number(value);
           if (!Number.isFinite(n)) return;
-          active[key] = Math.min(max, Math.max(min, Math.round(n)));
-          await this.plugin.saveSettings();
+          await this.saveActivePresetPatch({
+            [key]: Math.min(max, Math.max(min, Math.round(n))),
+          } as ActivePresetPatch);
         });
       });
   }
