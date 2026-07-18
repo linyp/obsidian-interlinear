@@ -1,6 +1,6 @@
 {
   "name": "interlinear",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Interlinear — reading-mode interlinear translation for Obsidian: render translations alongside the original, never modifying your notes. BYOK (DeepSeek or any OpenAI-compatible endpoint, plus traditional machine-translation services).",
   "main": "main.js",
   "scripts": {
