@@ -142,7 +142,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
         this.addSecretSetting(
           containerEl,
           "App secret (密钥)",
-          "BYOK — stored only in the local data.json; never uploaded, logged, or committed.",
+          "BYOK — stored only in local plugin settings files; never uploaded, logged, or committed.",
           () => settings.presets.mt.baidu!.appSecret,
           (v) => (this.plugin.settings.presets.mt.baidu!.appSecret = v)
         );
@@ -160,7 +160,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
         this.addSecretSetting(
           containerEl,
           "App secret (应用密钥)",
-          "BYOK — stored only in the local data.json; never uploaded, logged, or committed.",
+          "BYOK — stored only in local plugin settings files; never uploaded, logged, or committed.",
           () => settings.presets.mt.youdao!.appSecret,
           (v) => (this.plugin.settings.presets.mt.youdao!.appSecret = v)
         );
@@ -204,7 +204,7 @@ export class InterlinearSettingTab extends PluginSettingTab {
     this.addSecretSetting(
       containerEl,
       "API key",
-      "BYOK — stored only in the local data.json; never uploaded, logged, or committed.",
+      "BYOK — stored only in local plugin settings files; never uploaded, logged, or committed.",
       () => active.apiKey,
       (v) => (active.apiKey = v),
       "sk-..."

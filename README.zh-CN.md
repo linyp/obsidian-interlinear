@@ -12,8 +12,9 @@
   关闭再重开笔记，磁盘上的文件一字节未变。
 - **绝不自动翻译。** 打开或切换笔记什么都不会发生。翻译**有且仅有**在你显式点击悬浮按钮 /
   状态栏按钮（或执行命令）时才会运行。
-- **BYOK，零遥测。** API key 只存在 vault 本地的 `data.json` 里（已被 git 忽略）。绝不硬编码、
-  绝不写入日志，也绝不发往你配置的翻译端点以外的任何地方。
+- **BYOK，零遥测。** 凭据只存在 vault 本地的插件设置文件里：`data.json`，以及设置迁移后
+  一次性保留的 `data.backup.json`（本仓库已忽略二者）。绝不硬编码、绝不写入日志，
+  也绝不发往你配置的翻译端点以外的任何地方。
 - **仅阅读模式**（MVP）。不做编辑 / 实时预览（Live Preview）翻译。
 
 ## 功能
@@ -48,12 +49,14 @@
   服务则是各自固定的 API 端点）。除此之外不发送任何数据，也绝不会同时发给多个服务。
 - **需要账号。** 自带 API key / 应用凭据（BYOK），费用由对应服务商收取，与本插件无关。
 - **零遥测。** 插件不收集任何信息，不向任何地方上报。
-- **仅本地文件。** 设置（含 API key）存于插件的 `data.json`；翻译缓存存于同目录的
-  `cache.json`（只有内容 hash 和译文）。你的笔记永远不会被修改。
-- **同步注意。** `data.json` 位于 vault 内部，vault 同步（Obsidian Sync、iCloud、
-  Dropbox 等）会把你的 API key 带到所有同步端。若你用 git 管理 vault，请把
-  `.obsidian/plugins/interlinear/data.json` 加入该 vault 仓库的 `.gitignore`，
-  避免把 key 提交出去。
+- **仅本地文件。** 设置（含凭据）存于插件的 `data.json`；设置迁移前的一次性副本可能存于
+  `data.backup.json`；翻译缓存存于同目录的 `cache.json`（只有内容 hash 和译文）。你的
+  笔记永远不会被修改。
+- **同步注意。** 这些设置文件位于 vault 内部，vault 同步（Obsidian Sync、iCloud、
+  Dropbox 等）会把凭据带到所有同步端。若你用 git 管理 vault，请把
+  `.obsidian/plugins/interlinear/data.json` 和
+  `.obsidian/plugins/interlinear/data.backup.json` 都加入该 vault 仓库的 `.gitignore`，
+  避免把凭据提交出去。
 
 ## 安装
 
@@ -66,6 +69,14 @@
 点击 **Install** 跳转安装。
 
 后续更新通过 Obsidian 的插件更新流程获取——**设置 → 第三方插件 → 检查更新**。
+
+### 从 v0.2.5 升级设置
+
+首个使用 settings schema v2 的版本会把 v0.2.5 的扁平设置一次性迁移到新格式，并在改写
+`data.json` 之前把原始数据保存在 `data.backup.json`。
+
+如果你同步插件设置，请先在**所有同步设备上升级 Interlinear，再在任何设备上修改设置**。
+不支持新旧插件版本混用，也不支持迁移后直接降级。
 
 ### 通过 BRAT（抢先 / 测试版）
 
@@ -92,8 +103,8 @@
 
 | 设置项 | 默认值 | 说明 |
 | --- | --- | --- |
-| 翻译服务 | DeepSeek | 一个下拉、两类服务。**LLM**：DeepSeek / OpenAI / SiliconFlow / Ollama / 自定义 OpenAI 兼容端点——一键填充端点、模型及该服务推荐的限速/批量调优（会覆盖下方高级设置；选「自定义」则不改动）。**传统机器翻译**：百度翻译 / 有道智云——只需填凭据，切换时自动套用推荐调优。所有服务的凭据独立保存，切换不丢 key。 |
-| API key _（仅 LLM）_ | _（空）_ | 必填（BYOK）。仅存于 `data.json`。 |
+| 翻译服务 | DeepSeek | 一个下拉、两类服务。**LLM**：DeepSeek / OpenAI / SiliconFlow / Ollama / 自定义 OpenAI 兼容端点。**传统机器翻译**：百度翻译 / 有道智云。每个预设分别保存凭据和高级调优；LLM 预设还会分别保存端点/模型与自定义指令。首次选择时初始化该预设的推荐默认值，以后切回时恢复已保存的值。 |
+| API key _（仅 LLM）_ | _（空）_ | 必填（BYOK）。仅存于本地插件设置文件。 |
 | App ID + 密钥 _（百度 / 有道）_ | _（空）_ | 到对应服务的开发者控制台申请的应用凭据对（BYOK，同样只存本地）。 |
 | Base URL _（仅 LLM）_ | `https://api.deepseek.com` | 任意 OpenAI 兼容端点。 |
 | 模型 _（仅 LLM）_ | `deepseek-v4-flash` | |
@@ -193,7 +204,7 @@ src/
                 LRU + 序列化）；requestUrlClient.ts 是唯一的 requestUrl 适配器
   render/       postProcessor.ts —— DOM 适配器 + 收集/注入/清除/显示模式/样式辅助函数
   ui/           translateButton.ts（状态栏 + 悬浮按钮 + 翻译流程）、settingsTab.ts
-  settings.ts   纯设置类型 + 默认值 + 归一化/校验
+  settings.ts   纯设置类型 + 默认值 + schema 迁移 + 归一化/校验
   main.ts       组合根（composition root）
 ```
 

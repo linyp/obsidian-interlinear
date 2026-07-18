@@ -66,7 +66,7 @@ styles.css                     # 双语 / 仅译文两种模式的样式
 esbuild.config.mjs
 src/
   main.ts                      # Plugin 入口：onload/onunload，注册 post-processor、设置页、FAB
-  settings.ts                  # Settings 类型 + 默认值 + PluginSettingTab
+  settings.ts                  # Settings 类型 + 默认值 + schema 迁移/归一化（纯逻辑）
   ui/
     translateButton.ts         # FAB 注入、点击处理、模式切换
   render/
@@ -115,13 +115,21 @@ src/
 
 ## 传统机器翻译服务（Phase 2，已实现）
 
-设置里 `service` 判别字段选择后端：`llm`（默认，上述 DeepSeek/OpenAI 兼容路径）或
-`baidu` / `youdao`。**后端取舍原则**：传统机翻只集成注册即可用、无需绑信用卡的服务；
-DeepL、Google Cloud Translation 等开通（含免费档）就要求绑卡的服务明确不做。
-（`normalizeSettings` 对未知的 `service` 值一律回落到 `llm`，所以删减服务不会让老
-data.json 崩溃。）改动这部分时必须维持的工程约束：
+设置里的 `service` 直接保存当前的具体预设 ID：`deepseek`（默认）/ `openai` /
+`siliconflow` / `ollama` / `custom` / `baidu` / `youdao`。LLM 预设共用 OpenAI 兼容路径，
+传统机翻使用各自 provider。**后端取舍原则**：传统机翻只集成注册即可用、无需绑信用卡的
+服务；DeepL、Google Cloud Translation 等开通（含免费档）就要求绑卡的服务明确不做。
+`normalizeSettings` 对未知 `service` 回落到默认的 `deepseek`。改动这部分时必须维持：
 
-- **各服务凭据独立持久化**（`settings.baidu/youdao` 子对象），切换服务不丢 key。
+- **settings schema v2 是当前唯一写入格式。** `settingsSchemaVersion: 2` 是权威版本标记；
+  无版本的 v0.2.5 设置视为 v1，加载时单向迁移，并在改写 `data.json` 前把原始内容一次性
+  备份到 `data.backup.json`。遇到未来或非法版本必须拒绝加载并阻止设置写入，禁止用默认值
+  覆盖。新旧插件版本混用和迁移后降级不受支持；同步插件设置的用户必须先升级所有设备，
+  再在任一设备修改设置。
+- **每个预设只有一份独立持久化记录。** LLM 位于 `settings.presets.llm[presetId]`；百度/
+  有道位于 `settings.presets.mt.baidu/youdao`，凭据与 Advanced 调优存放在同一记录。首次选择
+  用该预设的推荐默认值创建记录，以后切回恢复原记录，切换服务不得丢 key 或用户调优。
+  业务逻辑读取活跃配置时使用 `getActivePresetSettings()` / `getActiveLlmSettings()`。
 - **每次 `translate()` 调用 = 恰好一次 HTTP 请求。** 限速由 `runPool` 的并发/间隔控制
   （`minIntervalMs` 是跨并发的全局起跑间隔）；provider 内部**绝不能循环发多请求**（会绕过
   QPS 限速）。百度基础文本翻译完成**个人认证**后免费：高级版 QPS 10、每月 100 万字符，
@@ -133,7 +141,7 @@ data.json 崩溃。）改动这部分时必须维持的工程约束：
   controller 的 `chunkForProvider()` 与用户 Advanced 设置取小。Advanced 的并发/间隔/重试
   对所有服务生效；Custom instructions 仅 LLM（MT 无提示词，UI 里已按服务隐藏）。
 - **缓存身份**：`cacheIdentity()`——LLM 用裸 model 名（老缓存不失效），MT 用 `mt:<service>`
-  前缀防碰撞。`providerConfigSignature` 只含**当前**服务的凭据：改非当前服务的 key 不清
+  前缀防碰撞。`providerConfigSignature` 只含**当前预设记录**的凭据：改非当前预设的 key 不清
   failed-set。
 - **签名坑**（已用测试锁死，别回归）：百度 MD5 对 urlencode **前**的原始串签名；有道 v3
   的 `input` 截断按 UTF-16 code unit（first10 + len + last10）。两家的错误都是 HTTP 200 +
@@ -187,5 +195,5 @@ commit message 中均可正常使用这些服务名。
 ## 提交前自检
 
 - `npm run build` 通过、`tsc --noEmit` 无错。
-- key 不在日志、不在仓库（检查 `.gitignore` 含 `data.json` 与构建产物按需忽略）。
+- key 不在日志、不在仓库（检查 `.gitignore` 含 `data.json`、`data.backup.json` 与构建产物）。
 - 重申一遍最容易回归的三条：**不自动翻译 / 不改原文件 / 用 requestUrl**。

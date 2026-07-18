@@ -171,7 +171,7 @@ export const MT_SERVICE_PRESETS: ReadonlyArray<MtServicePreset> = [
 ];
 
 export interface LlmPresetSettings extends AdvancedSettings {
-  /** BYOK — stored only in local data.json; never logged, never committed. */
+  /** BYOK — stored only in local plugin settings files; never logged or committed. */
   apiKey: string;
   baseUrl: string;
   model: string;

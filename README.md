@@ -15,9 +15,10 @@ by paragraph, as bilingual or translation-only.
 - **Never auto-translates.** Opening or switching notes does nothing. Translation
   runs **only** when you explicitly click the floating / status-bar button (or run
   the command).
-- **BYOK, zero telemetry.** Your API key lives only in the vault-local `data.json`
-  (git-ignored). It is never hard-coded, never logged, and never sent anywhere
-  except to the translation endpoint you configure.
+- **BYOK, zero telemetry.** Your credentials live only in vault-local plugin
+  settings files: `data.json` and, after a settings migration, the one-time
+  `data.backup.json` (both ignored by this repository). They are never hard-coded,
+  never logged, and never sent anywhere except to the translation endpoint you configure.
 - **Reading view only** (MVP). No edit/Live-Preview translation.
 
 ## Features
@@ -66,14 +67,16 @@ by paragraph, as bilingual or translation-only.
 - **Account required.** Bring your own API key / app credentials (BYOK) for the
   selected service; usage is billed by that provider, not by this plugin.
 - **No telemetry.** The plugin collects nothing and phones home nowhere.
-- **Local files only.** Settings (including your API key) live in the plugin's
-  `data.json`; the translation cache lives in `cache.json` next to it (content
-  hashes + translations only). Your notes are never modified.
-- **Syncing caveat.** `data.json` sits inside your vault, so vault sync
-  (Obsidian Sync, iCloud, Dropbox, …) carries your API key to every synced
-  device. If you keep your vault in a git repository, add
-  `.obsidian/plugins/interlinear/data.json` to that vault's `.gitignore` so
-  the key is never committed.
+- **Local files only.** Settings (including credentials) live in the plugin's
+  `data.json`. A one-time pre-migration copy may live in `data.backup.json`; the
+  translation cache lives in `cache.json` next to them (content hashes +
+  translations only). Your notes are never modified.
+- **Syncing caveat.** These settings files sit inside your vault, so vault sync
+  (Obsidian Sync, iCloud, Dropbox, …) carries credentials to every synced device.
+  If you keep your vault in a git repository, add both
+  `.obsidian/plugins/interlinear/data.json` and
+  `.obsidian/plugins/interlinear/data.backup.json` to that vault's `.gitignore`
+  so credentials are never committed.
 
 ## Install
 
@@ -87,6 +90,16 @@ in a browser and click **Install**.
 
 Updates arrive through Obsidian's plugin update flow — **Settings → Community
 plugins → Check for updates**.
+
+### Upgrading settings from v0.2.5
+
+The first release using settings schema v2 migrates v0.2.5's flat settings once
+and preserves the original data in `data.backup.json` before rewriting
+`data.json`.
+
+If you sync plugin settings, update Interlinear on **every synced device before
+changing its settings on any device**. Running mixed plugin versions and
+downgrading after the migration are not supported.
 
 ### Via BRAT (early / beta builds)
 
@@ -113,8 +126,8 @@ Open **Settings → Interlinear**:
 
 | Setting | Default | Notes |
 | --- | --- | --- |
-| Service | DeepSeek | One dropdown, two families. **LLM**: DeepSeek / OpenAI / SiliconFlow / Ollama / custom OpenAI-compatible — pre-fills base URL, model, and recommended rate/batch tuning (overwrites Advanced; Custom leaves it untouched). **Traditional MT**: Baidu Translate (百度翻译) / Youdao (有道智云) — only credentials needed; recommended tuning is applied on switch. Every service's credentials persist, so switching never loses keys. |
-| API key _(LLM only)_ | _(empty)_ | Required (BYOK). Stored only in `data.json`. |
+| Service | DeepSeek | One dropdown, two families. **LLM**: DeepSeek / OpenAI / SiliconFlow / Ollama / custom OpenAI-compatible. **Traditional MT**: Baidu Translate (百度翻译) / Youdao (有道智云). Each preset keeps its own credentials and Advanced tuning; LLM presets additionally keep their endpoint/model and custom instructions. The first selection initializes that preset's recommended defaults; later selections restore its saved values. |
+| API key _(LLM only)_ | _(empty)_ | Required (BYOK). Stored only in local plugin settings files. |
 | App ID + secret _(Baidu / Youdao)_ | _(empty)_ | The app credential pair from that service's developer console (BYOK, same storage rules). |
 | Base URL _(LLM only)_ | `https://api.deepseek.com` | Any OpenAI-compatible endpoint. |
 | Model _(LLM only)_ | `deepseek-v4-flash` | |
@@ -234,7 +247,7 @@ src/
                 + style helpers
   ui/           translateButton.ts (status bar + FAB + translation flow),
                 settingsTab.ts
-  settings.ts   pure settings types + defaults + normalize/validate
+  settings.ts   pure settings types + defaults + schema migration + normalize/validate
   main.ts       composition root
 ```
 

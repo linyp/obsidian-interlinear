@@ -1,8 +1,9 @@
-import { Plugin, debounce } from "obsidian";
+import { Notice, Plugin, debounce } from "obsidian";
 import {
   DEFAULT_SETTINGS,
   InterlinearSettings,
   SETTINGS_BACKUP_FILENAME,
+  isLegacySettingsData,
   loadStoredSettings,
   providerConfigSignature,
   UnsupportedSettingsSchemaVersionError,
@@ -12,14 +13,19 @@ import { obsidianRequestUrlClient } from "./translator/requestUrlClient";
 import { TranslationController } from "./ui/translateButton";
 import { InterlinearSettingTab } from "./ui/settingsTab";
 
+const SETTINGS_MIGRATION_NOTICE_MS = 15_000;
+const SETTINGS_MIGRATION_NOTICE =
+  "Interlinear upgraded its settings format and kept a local backup as data.backup.json. If you sync plugin settings, update Interlinear on every device before changing settings; mixed versions and downgrades are not supported.";
+
 /**
  * Interlinear — reading-mode interlinear translation for Obsidian.
  *
  * Composition root. Hard constraints enforced here:
  *  - The markdown post-processor NEVER translates / hits the network.
  *  - Translation runs ONLY via the FAB / status bar / a command (never on note open).
- *  - Settings persist to data.json, the translation cache to cache.json — both in
- *    the plugin folder; note bodies are never written.
+ *  - Settings persist to data.json (with data.backup.json retained after a schema
+ *    migration), the translation cache to cache.json — all in the plugin folder;
+ *    note bodies are never written.
  */
 export default class InterlinearPlugin extends Plugin {
   settings: InterlinearSettings = DEFAULT_SETTINGS;
@@ -93,8 +99,10 @@ export default class InterlinearPlugin extends Plugin {
 
   async loadSettings(): Promise<void> {
     this.settingsWritesBlocked = true;
+    let migratedLegacySettings = false;
     try {
       const stored = await this.loadData();
+      migratedLegacySettings = isLegacySettingsData(stored);
       const backupPath = this.pluginFilePath(SETTINGS_BACKUP_FILENAME);
       this.settings = await loadStoredSettings(stored, {
         readBackup: async () =>
@@ -112,6 +120,10 @@ export default class InterlinearPlugin extends Plugin {
         console.error("Interlinear: failed to load settings");
       }
       throw error;
+    }
+
+    if (migratedLegacySettings) {
+      new Notice(SETTINGS_MIGRATION_NOTICE, SETTINGS_MIGRATION_NOTICE_MS);
     }
   }
 
