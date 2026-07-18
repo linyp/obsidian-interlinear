@@ -1,6 +1,6 @@
 # Interlinear
 
-**English** · [简体中文](README.zh-CN.md)
+**English** · [简体中文](https://github.com/linyp/obsidian-interlinear/blob/main/README.zh-CN.md) · [日本語](https://github.com/linyp/obsidian-interlinear/blob/main/README.ja.md) · [한국어](https://github.com/linyp/obsidian-interlinear/blob/main/README.ko.md) · [Tiếng Việt](https://github.com/linyp/obsidian-interlinear/blob/main/README.vi.md)
 
 Reading-mode **interlinear translation** for [Obsidian](https://obsidian.md). Open a
 foreign-language note in reading view, click one button, and Interlinear renders a
@@ -48,8 +48,8 @@ by paragraph, as bilingual or translation-only.
 - **Skips what shouldn't be translated:** code blocks, math, image-only blocks,
   bare URLs, pure symbol/number blocks, and blocks safely recognized as already in
   a distinctive-script target language (`zh`, `ja`, `ko`, `th`, `he`, or `el`).
-  Shared-script targets such as English are translated conservatively because a
-  script alone cannot distinguish English from French, German, and others.
+  Shared-script targets such as English or Vietnamese are translated conservatively
+  because a script alone cannot distinguish languages that use the same alphabet.
 - **Pluggable backend** behind a `TranslationProvider` interface, with **service
   presets** across two families and a **Test connection** button in settings:
   - **LLM** (default): DeepSeek, OpenAI, SiliconFlow, Ollama, or any custom
@@ -133,7 +133,7 @@ Open **Settings → Interlinear**:
 | Base URL _(LLM only)_ | `https://api.deepseek.com` | Any OpenAI-compatible endpoint. |
 | Model _(LLM only)_ | `deepseek-v4-flash` | |
 | Test connection | — | Sends one tiny request to verify the credentials and endpoint. |
-| Target language | `zh-CN` | e.g. `zh-CN`, `en`, `ja`. |
+| Target language | `zh-CN` | First-class presets include `zh-CN`, `zh-TW`, `en`, `ja`, `ko`, `vi`, and more; custom BCP-47-style codes are also accepted. |
 | Default display mode | Bilingual | |
 | Translation style | Border | Border / quote / muted / dashed underline / learning mask. |
 | Floating button | Mobile only | Always / mobile only / never. |

@@ -9,6 +9,7 @@ describe("mapTargetLang", () => {
       ["en", { baidu: "en", youdao: "en" }],
       ["ja", { baidu: "jp", youdao: "ja" }],
       ["ko", { baidu: "kor", youdao: "ko" }],
+      ["vi", { baidu: "vie", youdao: "vi" }],
       ["fr", { baidu: "fra", youdao: "fr" }],
       ["de", { baidu: "de", youdao: "de" }],
       ["es", { baidu: "spa", youdao: "es" }],

@@ -95,6 +95,7 @@ describe("isLikelyTargetLanguage", () => {
   it("does NOT skip for shared-script (Latin/Cyrillic) targets — avoids wrongly skipping a different same-script language", () => {
     expect(isLikelyTargetLanguage("A normal English sentence.", "en")).toBe(false);
     expect(isLikelyTargetLanguage("Ceci est un paragraphe en français.", "en")).toBe(false);
+    expect(isLikelyTargetLanguage("Đây là một đoạn văn tiếng Việt.", "vi")).toBe(false);
     expect(isLikelyTargetLanguage("Это предложение на русском языке.", "ru")).toBe(false);
   });
 

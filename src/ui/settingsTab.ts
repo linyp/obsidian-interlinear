@@ -42,6 +42,7 @@ const LANGUAGE_PRESETS: ReadonlyArray<{ value: string; label: string }> = [
   { value: "en", label: "English (en)" },
   { value: "ja", label: "日本語 (ja)" },
   { value: "ko", label: "한국어 (ko)" },
+  { value: "vi", label: "Tiếng Việt (vi)" },
   { value: "fr", label: "Français (fr)" },
   { value: "de", label: "Deutsch (de)" },
   { value: "es", label: "Español (es)" },
