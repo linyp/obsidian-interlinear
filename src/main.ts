@@ -2,8 +2,10 @@ import { Plugin, debounce } from "obsidian";
 import {
   DEFAULT_SETTINGS,
   InterlinearSettings,
-  normalizeSettings,
+  SETTINGS_BACKUP_FILENAME,
+  loadStoredSettings,
   providerConfigSignature,
+  UnsupportedSettingsSchemaVersionError,
 } from "./settings";
 import { TranslationCache } from "./translator/cache";
 import { obsidianRequestUrlClient } from "./translator/requestUrlClient";
@@ -23,8 +25,11 @@ export default class InterlinearPlugin extends Plugin {
   settings: InterlinearSettings = DEFAULT_SETTINGS;
   readonly cache = new TranslationCache();
   private controller!: TranslationController;
+  private settingTab: InterlinearSettingTab | null = null;
   /** Last seen provider-config signature; a change drops stale per-note failures. */
   private lastConfigSig = "";
+  /** Prevent an older plugin instance from overwriting unsupported synced data. */
+  private settingsWritesBlocked = false;
 
   /** Trailing-edge debounce so a burst of cache writes becomes one disk flush. */
   private readonly scheduleCacheFlush = debounce(() => void this.flushCache(), 3000, true);
@@ -44,7 +49,8 @@ export default class InterlinearPlugin extends Plugin {
     });
     this.controller.mountStatusBar(this.addStatusBarItem());
 
-    this.addSettingTab(new InterlinearSettingTab(this.app, this));
+    this.settingTab = new InterlinearSettingTab(this.app, this);
+    this.addSettingTab(this.settingTab);
 
     // Reading-mode render hook kept as the documented render-only boundary: it
     // NEVER translates here. On-screen injection of (cached) translations is
@@ -86,10 +92,35 @@ export default class InterlinearPlugin extends Plugin {
   }
 
   async loadSettings(): Promise<void> {
-    this.settings = normalizeSettings(await this.loadData());
+    this.settingsWritesBlocked = true;
+    try {
+      const stored = await this.loadData();
+      const backupPath = this.pluginFilePath(SETTINGS_BACKUP_FILENAME);
+      this.settings = await loadStoredSettings(stored, {
+        readBackup: async () =>
+          (await this.app.vault.adapter.exists(backupPath))
+            ? this.app.vault.adapter.read(backupPath)
+            : null,
+        writeBackup: (data) => this.app.vault.adapter.write(backupPath, data),
+        writeSettings: (settings) => this.saveData(settings),
+      });
+      this.settingsWritesBlocked = false;
+    } catch (error) {
+      if (error instanceof UnsupportedSettingsSchemaVersionError) {
+        console.error(`Interlinear: ${error.message}`);
+      } else {
+        console.error("Interlinear: failed to load settings");
+      }
+      throw error;
+    }
   }
 
   async saveSettings(): Promise<void> {
+    if (this.settingsWritesBlocked) {
+      throw new Error(
+        "Interlinear: settings writes are blocked until supported settings data loads successfully"
+      );
+    }
     await this.saveData(this.settings);
     this.reactToConfigChange();
   }
@@ -103,6 +134,7 @@ export default class InterlinearPlugin extends Plugin {
     await this.loadSettings();
     this.reactToConfigChange();
     this.refreshUi();
+    this.settingTab?.refreshAfterExternalSettingsChange();
   }
 
   /** If the provider config changed, drop stale per-note failures so they can
@@ -121,9 +153,13 @@ export default class InterlinearPlugin extends Plugin {
 
   // --- persistent cache (plugin folder only — never the notes) --------------
 
-  private cacheFilePath(): string {
+  private pluginFilePath(filename: string): string {
     const dir = this.manifest.dir ?? `${this.app.vault.configDir}/plugins/${this.manifest.id}`;
-    return `${dir}/cache.json`;
+    return `${dir}/${filename}`;
+  }
+
+  private cacheFilePath(): string {
+    return this.pluginFilePath("cache.json");
   }
 
   private async loadCacheFromDisk(): Promise<void> {
