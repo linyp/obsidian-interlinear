@@ -7,9 +7,13 @@
 <p align="center">
   <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.md">English</a> ·
   <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.zh-CN.md">简体中文</a> ·
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.zh-TW.md">繁體中文</a> ·
   <strong>日本語</strong> ·
   <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.ko.md">한국어</a> ·
-  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.vi.md">Tiếng Việt</a>
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.vi.md">Tiếng Việt</a> ·
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.ru.md">Русский</a> ·
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.pt-BR.md">Português (Brasil)</a> ·
+  <a href="https://github.com/linyp/obsidian-interlinear/blob/main/README.es.md">Español</a>
 </p>
 
 <p align="center">
